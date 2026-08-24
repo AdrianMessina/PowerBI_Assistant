@@ -1,0 +1,13 @@
+Return code: 0
+Output length: 256
+
+--- CSV Output ---
+"Nombre de imagen","PID","Nombre de sesi�n","N�m. de sesi�n","Uso de memoria","Estado","Nombre de usuario","Tiempo de CPU","T�tulo de ventana"
+"PBIDesktop.exe","15976","rdp-sxs260209600#0","2","257.376 KB","Running","YPF\SE46958","0:00:39","Tablero Boxes"
+
+--- Parsed Data ---
+
+Row 1:
+  Keys: ['Nombre de imagen', 'PID', 'Nombre de sesi�n', 'N�m. de sesi�n', 'Uso de memoria', 'Estado', 'Nombre de usuario', 'Tiempo de CPU', 'T�tulo de ventana']
+  Raw window title: []
+  ✗ Skipped (invalid title)
