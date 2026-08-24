@@ -1,0 +1,1940 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PBI CLI - Power BI + AI</title>
+    <meta name="no-proxy" content="localhost,127.0.0.1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* ═══════════════════════════════════════════
+           THEME
+           ═══════════════════════════════════════════ */
+        :root {
+            --bg-base: #0B0E14;
+            --bg-surface: #111520;
+            --bg-elevated: #181D2A;
+            --bg-hover: #1E2536;
+            --border: #252D3D;
+            --border-subtle: #1A2030;
+
+            --text-primary: #E8ECF4;
+            --text-secondary: #8B95A8;
+            --text-muted: #5A6478;
+
+            --accent: #F2C811;
+            --accent-dim: rgba(242, 200, 17, 0.12);
+            --accent-glow: rgba(242, 200, 17, 0.25);
+            --blue: #0078D4;
+            --blue-dim: rgba(0, 120, 212, 0.12);
+            --green: #107C10;
+            --green-dim: rgba(16, 124, 16, 0.12);
+            --red: #D13438;
+            --red-dim: rgba(209, 52, 56, 0.12);
+            --orange: #F59E0B;
+            --orange-dim: rgba(245, 158, 11, 0.12);
+
+            --cat-analisis: #3B82F6;
+            --cat-analisis-dim: rgba(59, 130, 246, 0.12);
+            --cat-modelado: #8B5CF6;
+            --cat-modelado-dim: rgba(139, 92, 246, 0.12);
+            --cat-diseno: #EC4899;
+            --cat-diseno-dim: rgba(236, 72, 153, 0.12);
+            --cat-performance: #F59E0B;
+            --cat-performance-dim: rgba(245, 158, 11, 0.12);
+            --cat-documentacion: #10B981;
+            --cat-documentacion-dim: rgba(16, 185, 129, 0.12);
+
+            --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+            --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* ═══════════════════════════════════════════
+           RESET & BASE
+           ═══════════════════════════════════════════ */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-base);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+        }
+        *:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* ═══════════════════════════════════════════
+           HEADER
+           ═══════════════════════════════════════════ */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border-subtle);
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .logo {
+            width: 36px; height: 36px;
+            background: var(--accent);
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px; color: var(--bg-base);
+        }
+        .header-title {
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .header-title span {
+            color: var(--text-muted);
+            font-weight: 400;
+            margin-left: 8px;
+            font-size: 13px;
+        }
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 12px;
+            padding: 5px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: var(--font-body);
+            background: rgba(242, 200, 17, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(242, 200, 17, 0.3);
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.2s var(--ease);
+        }
+        .back-btn:hover {
+            background: rgba(242, 200, 17, 0.2);
+            border-color: var(--accent);
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .tone-selector {
+            display: flex;
+            gap: 2px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            padding: 3px;
+        }
+        .tone-btn {
+            padding: 4px 12px;
+            border: none;
+            border-radius: 100px;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: var(--font-body);
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s var(--ease);
+            min-height: 28px;
+        }
+        .tone-btn:hover { color: var(--text-secondary); }
+        .tone-btn.active {
+            background: var(--accent);
+            color: var(--bg-base);
+            font-weight: 600;
+        }
+        .status-badge {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .status-badge:hover { border-color: var(--accent); }
+        .status-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: background 0.3s;
+        }
+        .status-dot.ok { background: var(--green); box-shadow: 0 0 6px rgba(16,124,16,0.5); }
+        .status-dot.partial { background: var(--orange); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+        .status-dot.off { background: var(--red); }
+        .status-dot.loading { background: var(--accent); animation: pulse 1.2s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ═══════════════════════════════════════════
+           SETUP BANNER
+           ═══════════════════════════════════════════ */
+        /* ═══ COMPACT STATUS BAR ═══ */
+        .setup-banner {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(242, 200, 17, 0.15);
+            box-shadow: 0 1px 0 0 rgba(242, 200, 17, 0.05);
+            overflow: hidden;
+            max-height: 0;
+            transition: max-height 0.35s var(--ease);
+        }
+        .setup-banner.visible {
+            max-height: 800px;
+        }
+        .setup-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 12px 20px;
+        }
+
+        /* Compact horizontal layout */
+        .setup-main-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+        .setup-steps {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+        }
+
+        /* Ultra-compact step pills */
+        .setup-step {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 6px 12px 6px 6px;
+            transition: all 0.2s var(--ease);
+            position: relative;
+            overflow: hidden;
+        }
+        .setup-step::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 0% 50%, transparent 0%, transparent 100%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .setup-step.done {
+            border-color: rgba(16, 124, 16, 0.4);
+        }
+        .setup-step.done::before {
+            background: radial-gradient(circle at 0% 50%, rgba(16, 124, 16, 0.15) 0%, transparent 80%);
+            opacity: 1;
+        }
+        .setup-step.warn {
+            border-color: rgba(245, 158, 11, 0.4);
+        }
+        .setup-step.warn::before {
+            background: radial-gradient(circle at 0% 50%, rgba(245, 158, 11, 0.15) 0%, transparent 80%);
+            opacity: 1;
+        }
+        .setup-step:not(.done):not(.warn) {
+            border-color: rgba(209, 52, 56, 0.4);
+        }
+
+        /* Glowing status icons */
+        .setup-step-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 1;
+        }
+        .setup-step.done .setup-step-icon {
+            background: var(--green);
+            color: #000;
+            box-shadow: 0 0 12px rgba(16, 124, 16, 0.6), 0 0 4px rgba(16, 124, 16, 0.8);
+        }
+        .setup-step.warn .setup-step-icon {
+            background: var(--orange);
+            color: #000;
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.5), 0 0 4px rgba(245, 158, 11, 0.7);
+        }
+        .setup-step:not(.done):not(.warn) .setup-step-icon {
+            background: var(--red);
+            color: #fff;
+            box-shadow: 0 0 8px rgba(209, 52, 56, 0.4);
+        }
+
+        /* Compact inline text */
+        .setup-step-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+        }
+        .setup-step-desc {
+            display: none; /* Hidden in compact mode */
+        }
+
+        /* Inline critical info */
+        .setup-info-inline {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 10.5px;
+            color: var(--text-secondary);
+            flex-wrap: wrap;
+        }
+        .setup-info-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--cat-analisis);
+            white-space: nowrap;
+        }
+        .setup-info-badge.success {
+            background: rgba(16, 124, 16, 0.15);
+            border-color: rgba(16, 124, 16, 0.3);
+            color: var(--green);
+        }
+        .setup-info-badge.warning {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: var(--orange);
+        }
+
+        /* Collapse button */
+        .setup-close {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 6px;
+            font-size: 14px;
+            line-height: 1;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .setup-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--accent);
+        }
+
+        /* Expandable config panel */
+        .setup-expanded-panel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s var(--ease), opacity 0.3s;
+            opacity: 0;
+        }
+        .setup-expanded-panel.active {
+            max-height: 600px;
+            opacity: 1;
+            padding-top: 8px;
+        }
+        .setup-config-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+        }
+        .setup-config-input {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 6px 10px;
+            font-size: 11px;
+            font-family: var(--font-mono);
+            border-radius: 6px;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .setup-config-input:focus {
+            border-color: var(--accent);
+            background: rgba(15, 23, 42, 0.9);
+        }
+        .setup-config-input::placeholder {
+            color: var(--text-muted);
+        }
+        .setup-config-btn {
+            padding: 6px 12px;
+            font-size: 10.5px;
+            font-weight: 600;
+            background: var(--green);
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .setup-config-btn:hover {
+            background: #0f9b0f;
+            box-shadow: 0 0 12px rgba(16, 124, 16, 0.4);
+        }
+        .setup-config-btn.cancel {
+            background: rgba(209, 52, 56, 0.2);
+            color: var(--red);
+            border: 1px solid rgba(209, 52, 56, 0.4);
+        }
+        .setup-config-btn.cancel:hover {
+            background: rgba(209, 52, 56, 0.3);
+        }
+        /* Connection selector dropdown */
+        #connectionSelector {
+            background: rgba(16, 124, 16, 0.15);
+            border: 1px solid rgba(16, 124, 16, 0.3);
+            color: var(--green);
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            font-family: var(--font-body);
+            cursor: pointer;
+            outline: none;
+            appearance: auto;
+        }
+        #connectionSelector:focus {
+            border-color: var(--accent);
+        }
+        #connectionSelector option {
+            background: var(--bg-base);
+            color: var(--text-primary);
+        }
+        .setup-toggle-config {
+            font-size: 10px;
+            background: transparent;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: var(--orange);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+        .setup-toggle-config:hover {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: var(--orange);
+        }
+
+        /* ═══════════════════════════════════════════
+           CHAT AREA
+           ═══════════════════════════════════════════ */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 0;
+            scroll-behavior: smooth;
+        }
+        .chat-container::-webkit-scrollbar { width: 6px; }
+        .chat-container::-webkit-scrollbar-track { background: transparent; }
+        .chat-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .messages {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        /* ═══════════════════════════════════════════
+           MESSAGE BUBBLES
+           ═══════════════════════════════════════════ */
+        .message {
+            display: flex;
+            gap: 12px;
+            padding: 8px 0;
+            animation: msgIn 0.35s var(--ease) both;
+        }
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message.user { flex-direction: row-reverse; }
+        .message-avatar {
+            min-width: 36px; height: 32px;
+            padding: 0 4px;
+            border-radius: var(--radius-sm);
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 700;
+            margin-top: 2px;
+            letter-spacing: 0.3px;
+        }
+        .message.assistant .message-avatar {
+            background: var(--accent-dim);
+            color: var(--accent);
+            border: 1px solid rgba(242,200,17,0.2);
+        }
+        .message.user .message-avatar {
+            background: var(--blue-dim);
+            color: var(--blue);
+            border: 1px solid rgba(0,120,212,0.2);
+        }
+        .message-content { max-width: 680px; min-width: 0; }
+        .message.user .message-content { text-align: right; }
+        .message-bubble {
+            display: inline-block;
+            padding: 10px 16px;
+            border-radius: var(--radius-lg);
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            text-align: left;
+        }
+        .message.assistant .message-bubble {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-top-left-radius: var(--radius-sm);
+        }
+        .message.user .message-bubble {
+            background: var(--blue);
+            color: #fff;
+            border-top-right-radius: var(--radius-sm);
+        }
+        .message-bubble code {
+            font-family: var(--font-mono);
+            font-size: 12.5px;
+            background: rgba(0,0,0,0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .message.user .message-bubble code { background: rgba(255,255,255,0.15); }
+        .message-bubble pre {
+            background: var(--bg-base);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            margin: 8px 0;
+            overflow-x: auto;
+            font-family: var(--font-mono);
+            font-size: 12.5px;
+            line-height: 1.5;
+        }
+        .message-bubble pre code { background: none; padding: 0; }
+        .message-bubble strong { font-weight: 600; color: var(--accent); }
+        .message-bubble em { font-style: italic; color: var(--text-secondary); }
+        .message-bubble h1, .message-bubble h2, .message-bubble h3 {
+            margin-top: 12px; margin-bottom: 4px; font-weight: 600;
+        }
+        .message-bubble h1 { font-size: 18px; }
+        .message-bubble h2 { font-size: 16px; }
+        .message-bubble h3 { font-size: 14px; color: var(--accent); }
+        .message-bubble ul, .message-bubble ol { padding-left: 20px; margin: 6px 0; }
+        .message-bubble li { margin: 2px 0; }
+        .message-bubble table { border-collapse: collapse; margin: 8px 0; font-size: 13px; width: 100%; }
+        .message-bubble th, .message-bubble td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+        .message-bubble th { background: var(--bg-base); font-weight: 600; color: var(--accent); }
+
+        .typing-indicator { display: flex; gap: 5px; padding: 14px 18px; }
+        .typing-indicator span {
+            width: 7px; height: 7px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes typing {
+            0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+            30% { opacity: 1; transform: translateY(-4px); }
+        }
+
+        /* ═══════════════════════════════════════════
+           WELCOME SCREEN
+           ═══════════════════════════════════════════ */
+        .welcome {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 32px 24px 24px;
+            animation: fadeIn 0.6s var(--ease);
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .welcome-hero { text-align: center; margin-bottom: 28px; }
+        .welcome-icon {
+            width: 56px; height: 56px;
+            background: var(--accent-dim);
+            border: 1px solid rgba(242,200,17,0.15);
+            border-radius: var(--radius-lg);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; font-weight: 700; color: var(--accent);
+            margin: 0 auto 16px;
+        }
+        .welcome-hero h2 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+        .welcome-hero p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            max-width: 520px;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+
+        /* ─── How it works (quick explainer) ─── */
+        .how-it-works {
+            max-width: 680px;
+            width: 100%;
+            margin-bottom: 28px;
+        }
+        .how-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 10px 16px;
+            color: var(--text-secondary);
+            font-family: var(--font-body);
+            font-size: 13px;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s;
+        }
+        .how-toggle:hover { border-color: var(--accent); color: var(--text-primary); }
+        .how-toggle svg {
+            width: 14px; height: 14px;
+            transition: transform 0.3s var(--ease);
+        }
+        .how-toggle.open svg { transform: rotate(90deg); }
+        .how-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s var(--ease);
+        }
+        .how-content.open { max-height: 500px; }
+        .how-inner {
+            padding: 16px 0 4px;
+            display: flex;
+            gap: 12px;
+        }
+        .how-card {
+            flex: 1;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 16px;
+        }
+        .how-card-icon {
+            width: 32px; height: 32px;
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .how-card:nth-child(1) .how-card-icon { background: var(--blue-dim); color: var(--blue); }
+        .how-card:nth-child(2) .how-card-icon { background: var(--accent-dim); color: var(--accent); }
+        .how-card-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .how-card-desc {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        .how-card code {
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            background: rgba(242,200,17,0.1);
+            color: var(--accent);
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+        .how-card .layer-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 100px;
+            margin-bottom: 8px;
+        }
+        .how-card:nth-child(1) .layer-badge { background: var(--blue-dim); color: var(--blue); }
+        .how-card:nth-child(2) .layer-badge { background: var(--cat-diseno-dim); color: var(--cat-diseno); }
+
+        /* ─── Category tabs ─── */
+        .category-tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            padding: 0 4px 4px;
+            max-width: 680px;
+            width: 100%;
+            justify-content: center;
+        }
+        .category-tabs::-webkit-scrollbar { display: none; }
+        .cat-tab {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            font-family: var(--font-body);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s var(--ease);
+            white-space: nowrap;
+            flex-shrink: 0;
+            min-height: 38px;
+        }
+        .cat-tab:hover { background: var(--bg-hover); color: var(--text-primary); transform: translateY(-1px); }
+        .cat-tab.active {
+            border-color: var(--cat-color, var(--accent));
+            background: var(--cat-bg, var(--accent-dim));
+            color: var(--text-primary);
+        }
+        .cat-tab svg { width: 15px; height: 15px; flex-shrink: 0; }
+        .cat-tab .req-dot {
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .cat-tab .req-dot.needs-pbi { background: var(--blue); }
+        .cat-tab .req-dot.offline { background: var(--green); }
+
+        .cat-tab[data-cat="analisis"]       { --cat-color: var(--cat-analisis); --cat-bg: var(--cat-analisis-dim); }
+        .cat-tab[data-cat="modelado"]        { --cat-color: var(--cat-modelado); --cat-bg: var(--cat-modelado-dim); }
+        .cat-tab[data-cat="diseno"]          { --cat-color: var(--cat-diseno); --cat-bg: var(--cat-diseno-dim); }
+        .cat-tab[data-cat="performance"]     { --cat-color: var(--cat-performance); --cat-bg: var(--cat-performance-dim); }
+        .cat-tab[data-cat="documentacion"]   { --cat-color: var(--cat-documentacion); --cat-bg: var(--cat-documentacion-dim); }
+
+        /* ─── Category panels ─── */
+        .category-panels { max-width: 680px; width: 100%; }
+        .cat-panel { display: none; animation: panelIn 0.3s var(--ease); }
+        .cat-panel.active { display: block; }
+        @keyframes panelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        .cat-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding: 0 4px;
+        }
+        .cat-panel-icon {
+            width: 28px; height: 28px;
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .cat-panel-icon svg { width: 16px; height: 16px; }
+        .cat-panel-header h3 { font-size: 14px; font-weight: 600; }
+        .cat-panel-header .panel-req {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 500;
+            padding: 3px 10px;
+            border-radius: 100px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .panel-req.needs-pbi { background: var(--blue-dim); color: var(--blue); }
+        .panel-req.offline { background: var(--green-dim); color: var(--green); }
+        .panel-req.mixed { background: var(--orange-dim); color: var(--orange); }
+        .panel-req svg { width: 12px; height: 12px; }
+
+        /* ─── Feature cards ─── */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .feature-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            cursor: pointer;
+            transition: all 0.25s var(--ease);
+            position: relative;
+            overflow: hidden;
+        }
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 3px; height: 100%;
+            background: var(--card-accent, var(--accent));
+            opacity: 0;
+            transition: opacity 0.25s;
+        }
+        .feature-card:hover {
+            background: var(--bg-hover);
+            border-color: var(--card-accent, var(--accent));
+            transform: translateY(-1px);
+        }
+        .feature-card:hover::before { opacity: 1; }
+        .feature-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .feature-card-title .cmd-badge {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 500;
+            padding: 1px 6px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.06);
+            color: var(--text-muted);
+        }
+        .feature-card-desc {
+            font-size: 12.5px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        .feature-card-prompt { display: none; }
+
+        .cat-panel[data-cat="analisis"] .feature-card       { --card-accent: var(--cat-analisis); }
+        .cat-panel[data-cat="modelado"] .feature-card        { --card-accent: var(--cat-modelado); }
+        .cat-panel[data-cat="diseno"] .feature-card          { --card-accent: var(--cat-diseno); }
+        .cat-panel[data-cat="performance"] .feature-card     { --card-accent: var(--cat-performance); }
+        .cat-panel[data-cat="documentacion"] .feature-card   { --card-accent: var(--cat-documentacion); }
+
+        .cat-panel[data-cat="analisis"] .cat-panel-icon       { background: var(--cat-analisis-dim); color: var(--cat-analisis); }
+        .cat-panel[data-cat="modelado"] .cat-panel-icon        { background: var(--cat-modelado-dim); color: var(--cat-modelado); }
+        .cat-panel[data-cat="diseno"] .cat-panel-icon          { background: var(--cat-diseno-dim); color: var(--cat-diseno); }
+        .cat-panel[data-cat="performance"] .cat-panel-icon     { background: var(--cat-performance-dim); color: var(--cat-performance); }
+        .cat-panel[data-cat="documentacion"] .cat-panel-icon   { background: var(--cat-documentacion-dim); color: var(--cat-documentacion); }
+
+        /* Free-form hint */
+        .freeform-hint {
+            max-width: 680px;
+            width: 100%;
+            text-align: center;
+            margin-top: 20px;
+            padding: 12px;
+            background: var(--bg-elevated);
+            border: 1px dashed var(--border);
+            border-radius: var(--radius-md);
+            font-size: 12.5px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        .freeform-hint strong { color: var(--text-secondary); font-weight: 500; }
+
+        /* ═══════════════════════════════════════════
+           INPUT AREA
+           ═══════════════════════════════════════════ */
+        .ypf-watermark {
+            position: fixed;
+            bottom: 12px;
+            left: 14px;
+            width: 32px;
+            height: auto;
+            opacity: 0.35;
+            pointer-events: none;
+            z-index: 10;
+            filter: grayscale(0.3);
+            transition: opacity 0.3s;
+        }
+        .input-area {
+            padding: 16px 24px 20px;
+            background: var(--bg-surface);
+            border-top: 1px solid var(--border-subtle);
+            flex-shrink: 0;
+        }
+        .input-wrapper {
+            max-width: 820px;
+            margin: 0 auto;
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 6px 6px 6px 16px;
+            transition: border-color 0.2s;
+        }
+        .input-wrapper:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-dim);
+        }
+        .input-wrapper textarea {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 14px;
+            line-height: 1.5;
+            resize: none;
+            padding: 8px 0;
+            max-height: 120px;
+            min-height: 24px;
+        }
+        .input-wrapper textarea::placeholder { color: var(--text-muted); }
+        .send-btn {
+            width: 38px; height: 38px;
+            background: var(--accent);
+            color: var(--bg-base);
+            border: none;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.2s;
+            min-height: 44px;
+            min-width: 44px;
+        }
+        .send-btn:hover { background: #E0B800; transform: scale(1.04); }
+        .send-btn:active { transform: scale(0.96); }
+        .send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+        .input-hint {
+            max-width: 820px;
+            margin: 6px auto 0;
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        /* ═══════════════════════════════════════════
+           RESPONSIVE
+           ═══════════════════════════════════════════ */
+        @media (max-width: 640px) {
+            .feature-grid { grid-template-columns: 1fr; }
+            .how-inner { flex-direction: column; }
+            .category-tabs { justify-content: flex-start; }
+            .setup-main-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .setup-steps { flex-wrap: wrap; width: 100%; }
+            .setup-info-inline { width: 100%; }
+            .setup-close { align-self: flex-end; }
+            .header { padding: 10px 16px; }
+            .header-title span { display: none; }
+            .tone-selector { display: none; }
+            .messages { padding: 0 16px; }
+            .input-area { padding: 12px 16px 16px; }
+            .welcome { padding: 20px 16px 16px; }
+        }
+        @media (max-width: 480px) {
+            .cat-tab span { display: none; }
+            .cat-tab { padding: 8px 12px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .message, .welcome, .cat-panel, .setup-banner { animation: none; }
+            .setup-banner { transition: none; }
+            .how-content { transition: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ═══ HEADER ═══ -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">PBI</div>
+            <div class="header-title">
+                Power BI Assistant
+                <span>pbi-cli + Claude AI</span>
+            </div>
+            <button id="backBtn" class="back-btn" onclick="goBackToMenu()" style="display:none;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Menu
+            </button>
+            <button id="newChatBtn" class="back-btn" onclick="newConversation()" style="display:none;">
+                + Nueva
+            </button>
+        </div>
+        <div class="header-right">
+            <div class="tone-selector">
+                <button class="tone-btn active" data-tone="porteno" onclick="setTone('porteno',this)">Porteno</button>
+                <button class="tone-btn" data-tone="formal" onclick="setTone('formal',this)">Formal</button>
+                <button class="tone-btn" data-tone="neutral" onclick="setTone('neutral',this)">Neutral</button>
+            </div>
+            <span id="userBadge" style="display:none; font-size:10px; color:var(--text-muted); margin-right:8px;"></span>
+            <div class="status-badge" onclick="toggleSetupBanner()" title="Ver estado de conexion">
+                <div class="status-dot loading" id="statusDot"></div>
+                <span id="statusText">Verificando...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ═══ SETUP BANNER ═══ -->
+    <div class="setup-banner" id="setupBanner">
+        <div class="setup-inner">
+            <!-- Main compact row -->
+            <div class="setup-main-row">
+                <!-- Status pills -->
+                <div class="setup-steps" id="setupSteps">
+                    <div class="setup-step" id="stepCli">
+                        <div class="setup-step-icon" id="stepCliIcon">1</div>
+                        <div class="setup-step-title">CLI</div>
+                    </div>
+                    <div class="setup-step" id="stepConn">
+                        <div class="setup-step-icon" id="stepConnIcon">2</div>
+                        <div class="setup-step-title">Conectado</div>
+                    </div>
+                    <div class="setup-step" id="stepReport">
+                        <div class="setup-step-icon" id="stepReportIcon">3</div>
+                        <div class="setup-step-title">PBIP</div>
+                    </div>
+                </div>
+
+                <!-- Inline critical info -->
+                <div class="setup-info-inline">
+                    <span id="connectedModelName" style="display: none;"></span>
+                    <select id="connectionSelector" class="setup-info-badge success"
+                            onchange="switchConnection(this.value)" style="display:none;">
+                    </select>
+                    <span id="pbipStatusBadge" style="display: none;"></span>
+                    <button class="setup-toggle-config" onclick="toggleConfigPanel()" id="configToggle">
+                        ⚙️ Configurar
+                    </button>
+                </div>
+
+                <!-- Close button -->
+                <button class="setup-close" onclick="toggleSetupBanner()" aria-label="Cerrar">&times;</button>
+            </div>
+
+            <!-- Expandable config panel -->
+            <div class="setup-expanded-panel" id="configPanel">
+                <!-- Option 1: File upload -->
+                <div class="setup-config-row" style="margin-bottom: 6px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
+                        <span style="font-size: 10px; color: var(--accent); font-weight: 600; white-space: nowrap;">📂 Subir .pbip</span>
+                        <input type="file" id="pbipFileInput" accept=".pbip" onchange="uploadPBIP(this)"
+                               style="font-size: 10px; color: var(--text-secondary); flex: 1;
+                                      background: rgba(15,23,42,0.6); border: 1px dashed var(--border);
+                                      border-radius: 6px; padding: 4px 8px; cursor: pointer;" />
+                    </label>
+                    <span id="uploadStatus" style="font-size: 9px; color: var(--text-muted);"></span>
+                </div>
+                <!-- Separator -->
+                <div style="text-align: center; font-size: 9px; color: var(--text-muted); margin: 4px 0;">— o pegar ruta local —</div>
+                <!-- Option 2: Manual path (existing) -->
+                <div class="setup-config-row">
+                    <input type="text"
+                           id="pbipPathInput"
+                           class="setup-config-input"
+                           placeholder="C:\Reportes\MiReporte.pbip" />
+                    <button onclick="setPBIPPath()" class="setup-config-btn">Guardar</button>
+                    <button onclick="toggleConfigPanel()" class="setup-config-btn cancel">Cancelar</button>
+                </div>
+            </div>
+
+            <!-- Admin: Usage metrics panel -->
+            <div class="setup-expanded-panel" id="metricsPanel">
+                <!-- Separator -->
+                <div style="border-top: 1px solid rgba(242,200,17,0.15); margin-bottom: 10px;"></div>
+
+                <div style="font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 10px;">
+                    📊 Metricas de uso
+                </div>
+
+                <!-- KPIs row -->
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px;">
+                    <div style="background: rgba(242,200,17,0.08); border: 1px solid rgba(242,200,17,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
+                        <div id="metricMessages" style="font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1.2;">-</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Mensajes</div>
+                    </div>
+                    <div style="background: rgba(16,124,16,0.08); border: 1px solid rgba(16,124,16,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
+                        <div id="metricSessions" style="font-size: 22px; font-weight: 700; color: var(--green); line-height: 1.2;">-</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Sesiones</div>
+                    </div>
+                    <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
+                        <div id="metricUsers" style="font-size: 22px; font-weight: 700; color: var(--cat-analisis); line-height: 1.2;">-</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Usuarios</div>
+                    </div>
+                    <div style="background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
+                        <div id="metricEvents" style="font-size: 22px; font-weight: 700; color: var(--cat-modelado); line-height: 1.2;">-</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Eventos</div>
+                    </div>
+                </div>
+
+                <!-- Activity chart -->
+                <div style="background: rgba(15,23,42,0.5); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px;">
+                    <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 4px;">Actividad (ultimos 14 dias)</div>
+                    <canvas id="activityChart" height="50" style="width: 100%;"></canvas>
+                </div>
+
+                <!-- Actions row -->
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button onclick="toggleRecentEvents()" class="setup-config-btn" style="font-size: 9px; padding: 4px 10px;">Ultimos eventos</button>
+                    <button onclick="exportUsageCSV()" class="setup-config-btn" style="font-size: 9px; padding: 4px 10px; background: var(--cat-analisis);">Exportar CSV</button>
+                </div>
+
+                <!-- Recent events table -->
+                <div id="recentEventsTable" style="display: none; margin-top: 8px; max-height: 120px; overflow-y: auto; background: rgba(15,23,42,0.4); border: 1px solid var(--border); border-radius: 6px;">
+                    <table style="width: 100%; font-size: 9px; border-collapse: collapse; color: var(--text-secondary);">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-elevated);">
+                                <th style="text-align: left; padding: 4px 8px;">Fecha</th>
+                                <th style="text-align: left; padding: 4px 8px;">Usuario</th>
+                                <th style="text-align: left; padding: 4px 8px;">Evento</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentEventsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ ACCESS DENIED OVERLAY ═══ -->
+    <div id="accessDenied" style="display:none; position:fixed; inset:0; background:var(--bg-base); z-index:9999; display:none; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="text-align:center; max-width:400px;">
+            <div style="font-size:48px; margin-bottom:16px;">🔒</div>
+            <h2 style="color:var(--text-primary); margin-bottom:8px;">Acceso restringido</h2>
+            <p style="color:var(--text-muted); font-size:14px;">Tu usuario (<span id="deniedUser"></span>) no tiene permisos para usar esta aplicacion.</p>
+            <p style="color:var(--text-muted); font-size:12px; margin-top:12px;">Contacta al administrador para solicitar acceso.</p>
+        </div>
+    </div>
+
+    <!-- ═══ CHAT ═══ -->
+    <div class="chat-container" id="chatContainer">
+        <div class="messages" id="messages">
+            <div class="welcome" id="welcome">
+                <div class="welcome-hero">
+                    <div class="welcome-icon">PBI</div>
+                    <h2>Power BI Assistant</h2>
+                    <p>Tu asistente de Power BI con IA. Consulta, modela, disena y optimiza tus reportes y modelos semanticos en lenguaje natural.</p>
+                </div>
+
+                <!-- How it works -->
+                <div class="how-it-works">
+                    <button class="how-toggle" onclick="toggleHow(this)" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        Como funciona? Dos capas, un asistente
+                    </button>
+                    <div class="how-content" id="howContent">
+                        <div class="how-inner">
+                            <div class="how-card">
+                                <span class="layer-badge">Modelo Semantico</span>
+                                <div class="how-card-title">Requiere Power BI Desktop abierto</div>
+                                <div class="how-card-desc">
+                                    Consultas DAX, medidas, relaciones, seguridad, diagnosticos.
+                                    Se conecta al motor de Analysis Services via <code>pbi connect</code> (auto-detecta el puerto).
+                                </div>
+                            </div>
+                            <div class="how-card">
+                                <span class="layer-badge">Capa de Reportes</span>
+                                <div class="how-card-title">Trabaja offline con archivos .pbip</div>
+                                <div class="how-card-desc">
+                                    Visuales, paginas, temas, filtros, custom visuals.
+                                    Lee y escribe archivos JSON del formato PBIR directamente en disco.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Category tabs -->
+                <div class="category-tabs">
+                    <button class="cat-tab active" data-cat="analisis" onclick="switchCategory('analisis',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        <span>Analisis</span>
+                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                    </button>
+                    <button class="cat-tab" data-cat="modelado" onclick="switchCategory('modelado',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                        <span>Modelado</span>
+                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                    </button>
+                    <button class="cat-tab" data-cat="diseno" onclick="switchCategory('diseno',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                        <span>Diseno</span>
+                        <span class="req-dot offline" title="Trabaja offline"></span>
+                    </button>
+                    <button class="cat-tab" data-cat="performance" onclick="switchCategory('performance',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        <span>Performance</span>
+                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                    </button>
+                    <button class="cat-tab" data-cat="documentacion" onclick="switchCategory('documentacion',this)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        <span>Deploy y Docs</span>
+                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                    </button>
+                </div>
+
+                <!-- ═══ PANELS ═══ -->
+                <div class="category-panels">
+
+                    <!-- ANALISIS -->
+                    <div class="cat-panel active" data-cat="analisis">
+                        <div class="cat-panel-header">
+                            <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+                            <h3>Analisis de Datos</h3>
+                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                        </div>
+                        <div class="feature-grid">
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Top productos por ventas <span class="cmd-badge">dax execute</span></div>
+                                <div class="feature-card-desc">Ejecuta una query DAX para ver los productos con mas ingresos.</div>
+                                <div class="feature-card-prompt">Mostrame los top 10 productos por ventas del modelo conectado</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Conteo de filas por tabla <span class="cmd-badge">dax execute</span></div>
+                                <div class="feature-card-desc">Obtiene la cantidad de registros en cada tabla del modelo.</div>
+                                <div class="feature-card-prompt">Cuantas filas tiene cada tabla del modelo? Mostralo ordenado de mayor a menor</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Resumen agrupado <span class="cmd-badge">SUMMARIZECOLUMNS</span></div>
+                                <div class="feature-card-desc">Agrupaciones con totales, promedios y conteos por dimension.</div>
+                                <div class="feature-card-prompt">Hace un resumen de ventas agrupado por categoria de producto con total, promedio y conteo</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Explorar estructura <span class="cmd-badge">INFO.TABLES</span></div>
+                                <div class="feature-card-desc">Lista todas las tablas, columnas y medidas del modelo conectado.</div>
+                                <div class="feature-card-prompt">Explorame la estructura completa del modelo: tablas, columnas y medidas</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MODELADO -->
+                    <div class="cat-panel" data-cat="modelado">
+                        <div class="cat-panel-header">
+                            <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
+                            <h3>Modelado Semantico</h3>
+                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                        </div>
+                        <div class="feature-grid">
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Crear medida DAX <span class="cmd-badge">measure create</span></div>
+                                <div class="feature-card-desc">Crea medidas con formulas DAX: sumas, promedios, time intelligence.</div>
+                                <div class="feature-card-prompt">Creame una medida de ventas acumuladas year-to-date usando TOTALYTD</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Gestionar relaciones <span class="cmd-badge">relationship</span></div>
+                                <div class="feature-card-desc">Crea y administra relaciones entre tablas del modelo.</div>
+                                <div class="feature-card-prompt">Mostrame todas las relaciones del modelo y sugeri las que falten para un esquema estrella</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Jerarquias y grupos <span class="cmd-badge">hierarchy</span></div>
+                                <div class="feature-card-desc">Organiza dimensiones en jerarquias y crea grupos de calculo.</div>
+                                <div class="feature-card-prompt">Crea una jerarquia de fecha con Ano, Trimestre, Mes y Dia en la tabla Calendar</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Seguridad RLS <span class="cmd-badge">security-role</span></div>
+                                <div class="feature-card-desc">Configura row-level security con roles y filtros por region o usuario.</div>
+                                <div class="feature-card-prompt">Configura seguridad RLS para que cada gerente regional solo vea datos de su region</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- DISENO -->
+                    <div class="cat-panel" data-cat="diseno">
+                        <div class="cat-panel-header">
+                            <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></div>
+                            <h3>Diseno de Reportes</h3>
+                            <span class="panel-req offline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Trabaja offline (.pbip)</span>
+                        </div>
+                        <div class="feature-grid">
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Crear reporte PBIR <span class="cmd-badge">report create</span></div>
+                                <div class="feature-card-desc">Scaffold de un proyecto PBIR completo con paginas y estructura.</div>
+                                <div class="feature-card-prompt">Crea un nuevo reporte PBIR con una pagina de resumen ejecutivo y otra de detalle</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Agregar visuales <span class="cmd-badge">visual add</span></div>
+                                <div class="feature-card-desc">32 tipos: barras, lineas, KPIs, cards, mapas, scatter y mas.</div>
+                                <div class="feature-card-prompt">Agrega un grafico de barras de ventas por region y un card de total de ventas en la pagina principal</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Aplicar temas <span class="cmd-badge">theme</span></div>
+                                <div class="feature-card-desc">Configura paleta de colores, tipografia y estilo visual del reporte.</div>
+                                <div class="feature-card-prompt">Aplica un tema corporativo oscuro con colores azul y dorado al reporte</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Filtros y slicers <span class="cmd-badge">filters add</span></div>
+                                <div class="feature-card-desc">Filtros TopN, categoricos, fechas relativas y slicers de pagina.</div>
+                                <div class="feature-card-prompt">Agrega un filtro TopN de los 10 productos con mas ventas a la pagina de detalle</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PERFORMANCE -->
+                    <div class="cat-panel" data-cat="performance">
+                        <div class="cat-panel-header">
+                            <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+                            <h3>Performance y Diagnosticos</h3>
+                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                        </div>
+                        <div class="feature-grid">
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Diagnostico del modelo <span class="cmd-badge">model stats</span></div>
+                                <div class="feature-card-desc">Estadisticas completas: tablas, columnas, medidas, relaciones y tamano.</div>
+                                <div class="feature-card-prompt">Analiza la salud del modelo: estadisticas, posibles problemas y sugerencias de mejora</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Trazar queries <span class="cmd-badge">trace start</span></div>
+                                <div class="feature-card-desc">Captura trazas de ejecucion DAX para identificar cuellos de botella.</div>
+                                <div class="feature-card-prompt">Inicia una traza de rendimiento, ejecuta la consulta de ventas por region y mostrame los resultados</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Limpiar cache <span class="cmd-badge">dax clear-cache</span></div>
+                                <div class="feature-card-desc">Limpia la cache del motor de formulas para benchmarks limpios.</div>
+                                <div class="feature-card-prompt">Limpia el cache de formulas DAX y decime cuanto tarda en ejecutar la consulta de ventas totales</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Optimizar medidas <span class="cmd-badge">measure list</span></div>
+                                <div class="feature-card-desc">Revisa medidas DAX existentes y sugiere optimizaciones de rendimiento.</div>
+                                <div class="feature-card-prompt">Lista todas las medidas del modelo y sugeri optimizaciones de DAX para las que tengan peor rendimiento</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- DOCUMENTACION -->
+                    <div class="cat-panel" data-cat="documentacion">
+                        <div class="cat-panel-header">
+                            <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+                            <h3>Documentacion y Deploy</h3>
+                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                        </div>
+                        <div class="feature-grid">
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Documentar modelo <span class="cmd-badge">docs</span></div>
+                                <div class="feature-card-desc">Genera un diccionario de datos completo con todas las medidas y tablas.</div>
+                                <div class="feature-card-prompt">Genera un diccionario de datos completo del modelo con descripcion de cada tabla, columna y medida</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Exportar TMDL <span class="cmd-badge">database export-tmdl</span></div>
+                                <div class="feature-card-desc">Exporta el modelo a formato TMDL para control de versiones con Git.</div>
+                                <div class="feature-card-prompt">Exporta el modelo completo a formato TMDL para poder versionarlo con Git</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Snapshot y backup <span class="cmd-badge">transaction</span></div>
+                                <div class="feature-card-desc">Guarda un snapshot del estado actual antes de hacer cambios grandes.</div>
+                                <div class="feature-card-prompt">Hace un snapshot del modelo actual antes de que empecemos a hacer cambios</div>
+                            </div>
+                            <div class="feature-card" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Comparar versiones <span class="cmd-badge">database diff-tmdl</span></div>
+                                <div class="feature-card-desc">Compara dos exports TMDL y muestra que cambio entre versiones.</div>
+                                <div class="feature-card-prompt">Compara las dos ultimas versiones TMDL exportadas y mostrame que cambio</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Free-form hint -->
+                <div class="freeform-hint">
+                    <strong>Estas son solo sugerencias.</strong> Podes escribir cualquier consulta en lenguaje natural y el asistente va a interpretar lo que necesitas y ejecutar los comandos correspondientes.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ YPF LOGO ═══ -->
+    <img src="logo_ypf.png" alt="YPF" class="ypf-watermark" />
+
+    <!-- ═══ INPUT ═══ -->
+    <div class="input-area">
+        <div class="input-wrapper">
+            <textarea id="userInput" placeholder="Preguntale algo sobre tu modelo de Power BI..." rows="1" autofocus></textarea>
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()" aria-label="Enviar mensaje">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 2 11 13"></path>
+                    <path d="M22 2 15 22 11 13 2 9z"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="input-hint">
+            Enter para enviar &middot; Shift+Enter para nueva linea &middot; Requiere Power BI Desktop abierto para comandos de modelo
+        </div>
+    </div>
+
+    <script>
+        /* ═══════════════════════════════════════════
+           STATE
+           ═══════════════════════════════════════════ */
+        const messagesEl  = document.getElementById('messages');
+        const chatContainer = document.getElementById('chatContainer');
+        const userInput   = document.getElementById('userInput');
+        const sendBtn     = document.getElementById('sendBtn');
+        const welcome     = document.getElementById('welcome');
+        const statusDot   = document.getElementById('statusDot');
+        const statusText  = document.getElementById('statusText');
+        const setupBanner = document.getElementById('setupBanner');
+
+        let isWaiting   = false;
+        let currentTone = localStorage.getItem('pbi-tone') || 'porteno';
+        let serverStatus = {};
+        let sessionId = null;  // Claude CLI session — null until first message
+        const backBtn = document.getElementById('backBtn');
+
+        // Restore tone
+        document.querySelectorAll('.tone-btn').forEach(b =>
+            b.classList.toggle('active', b.dataset.tone === currentTone));
+
+        /* ═══════════════════════════════════════════
+           TONE
+           ═══════════════════════════════════════════ */
+        function setTone(tone, btn) {
+            currentTone = tone;
+            localStorage.setItem('pbi-tone', tone);
+            sessionId = null;  // Reset session — tone is part of system prompt
+            document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        /* ═══════════════════════════════════════════
+           SETUP BANNER
+           ═══════════════════════════════════════════ */
+        function toggleSetupBanner() {
+            setupBanner.classList.toggle('visible');
+        }
+
+        function updateSetupSteps(s) {
+            const stepCli    = document.getElementById('stepCli');
+            const stepConn   = document.getElementById('stepConn');
+            const stepReport = document.getElementById('stepReport');
+
+            stepCli.className    = 'setup-step ' + (s.pbi_installed ? 'done' : '');
+            stepConn.className   = 'setup-step ' + (s.pbi_connected ? 'done' : 'warn');
+            stepReport.className = 'setup-step ' + (s.report_found ? 'done' : 'warn');
+
+            document.getElementById('stepCliIcon').textContent    = s.pbi_installed ? '\u2713' : '1';
+            document.getElementById('stepConnIcon').textContent   = s.pbi_connected ? '\u2713' : '2';
+            document.getElementById('stepReportIcon').textContent = s.report_found ? '\u2713' : '3';
+
+            // Show connected model name and connection selector
+            const modelNameEl = document.getElementById('connectedModelName');
+            const connSelector = document.getElementById('connectionSelector');
+
+            if (s.multiple_connections && s.all_connections) {
+                // Multiple connections: show dropdown selector
+                modelNameEl.style.display = 'none';
+                connSelector.innerHTML = '';
+                s.all_connections.forEach(conn => {
+                    const opt = document.createElement('option');
+                    opt.value = conn.port || '';
+                    const label = conn.name || 'Desconocido';
+                    opt.textContent = '📊 ' + (label.length > 30 ? label.substring(0, 30) + '...' : label);
+                    if (s.connection_port && String(conn.port) === String(s.connection_port)) {
+                        opt.selected = true;
+                    }
+                    connSelector.appendChild(opt);
+                });
+                connSelector.style.display = 'inline-block';
+            } else if (s.pbi_connected && s.connection_name) {
+                // Single connection: show static badge
+                connSelector.style.display = 'none';
+                modelNameEl.className = 'setup-info-badge success';
+                modelNameEl.innerHTML = '📊 ' + (s.connection_name.length > 25
+                    ? s.connection_name.substring(0, 25) + '...'
+                    : s.connection_name);
+                modelNameEl.style.display = 'inline-flex';
+            } else {
+                modelNameEl.style.display = 'none';
+                connSelector.style.display = 'none';
+            }
+
+            // Show PBIP status badge
+            const pbipBadgeEl = document.getElementById('pbipStatusBadge');
+            if (s.report_found && s.report_name) {
+                pbipBadgeEl.className = 'setup-info-badge success';
+                pbipBadgeEl.innerHTML = '✅ ' + (s.report_name.length > 20
+                    ? s.report_name.substring(0, 20) + '...'
+                    : s.report_name);
+                pbipBadgeEl.style.display = 'inline-flex';
+            } else if (s.suggest_conversion) {
+                pbipBadgeEl.className = 'setup-info-badge warning';
+                pbipBadgeEl.innerHTML = '⚠️ PBIP no configurado';
+                pbipBadgeEl.style.display = 'inline-flex';
+            } else {
+                pbipBadgeEl.style.display = 'none';
+            }
+        }
+
+        /* ═══════════════════════════════════════════
+           CONFIG PANEL TOGGLE
+           ═══════════════════════════════════════════ */
+        function toggleConfigPanel() {
+            const panel = document.getElementById('configPanel');
+            const metricsPanel = document.getElementById('metricsPanel');
+            const toggle = document.getElementById('configToggle');
+            if (panel.classList.contains('active')) {
+                panel.classList.remove('active');
+                metricsPanel.classList.remove('active');
+                toggle.textContent = '⚙️ Configurar';
+            } else {
+                panel.classList.add('active');
+                if (isAdmin) {
+                    metricsPanel.classList.add('active');
+                    loadMetrics();
+                }
+                toggle.textContent = '❌ Cerrar';
+            }
+        }
+
+        /* ═══════════════════════════════════════════
+           CATEGORY SWITCHING
+           ═══════════════════════════════════════════ */
+        function switchCategory(cat, tab) {
+            document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            document.querySelectorAll('.cat-panel').forEach(p => {
+                p.classList.remove('active');
+                p.style.animation = 'none';
+            });
+            const panel = document.querySelector('.cat-panel[data-cat="'+cat+'"]');
+            if (panel) { panel.classList.add('active'); panel.offsetHeight; panel.style.animation = ''; }
+        }
+
+        /* ═══════════════════════════════════════════
+           CONNECTION SWITCH
+           ═══════════════════════════════════════════ */
+        async function switchConnection(port) {
+            if (!port) return;
+            try {
+                const res = await fetch('/api/switch-connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ port: port }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    checkStatus(); // Refresh UI
+                } else {
+                    alert('❌ ' + (data.error || 'Error al cambiar conexión'));
+                }
+            } catch (err) {
+                alert('❌ Error: ' + err.message);
+            }
+        }
+
+        /* ═══════════════════════════════════════════
+           PBIP UPLOAD & CONFIGURATION
+           ═══════════════════════════════════════════ */
+        async function uploadPBIP(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById('uploadStatus');
+            statusEl.textContent = 'Subiendo...';
+            statusEl.style.color = 'var(--accent)';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/upload-pbip', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    statusEl.textContent = '✅ ' + data.message;
+                    statusEl.style.color = 'var(--green)';
+                    checkStatus(); // Refresh banner
+                } else {
+                    statusEl.textContent = '❌ ' + (data.error || 'Error');
+                    statusEl.style.color = 'var(--red)';
+                }
+            } catch (err) {
+                statusEl.textContent = '❌ ' + err.message;
+                statusEl.style.color = 'var(--red)';
+            }
+
+            // Reset input for re-upload
+            input.value = '';
+        }
+
+        async function setPBIPPath() {
+            const input = document.getElementById('pbipPathInput');
+            const path = input.value.trim();
+
+            if (!path) {
+                alert('Por favor ingresa una ruta válida');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/set-pbip-path', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path }),
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                    toggleConfigPanel(); // Close the panel
+                    input.value = '';
+                    // Refresh status
+                    checkStatus();
+                } else {
+                    alert('❌ ' + (data.error || 'Error desconocido'));
+                }
+            } catch (err) {
+                alert('❌ Error al configurar ruta: ' + err.message);
+            }
+        }
+
+        /* ═══════════════════════════════════════════
+           HOW IT WORKS TOGGLE
+           ═══════════════════════════════════════════ */
+        function toggleHow(btn) {
+            const content = document.getElementById('howContent');
+            const isOpen = content.classList.toggle('open');
+            btn.classList.toggle('open', isOpen);
+            btn.setAttribute('aria-expanded', isOpen);
+        }
+
+        /* ═══════════════════════════════════════════
+           FEATURE CARD CLICK
+           ═══════════════════════════════════════════ */
+        function useFeatureCard(card) {
+            const prompt = card.querySelector('.feature-card-prompt').textContent.trim();
+            userInput.value = prompt;
+            sendMessage();
+        }
+
+        /* ═══════════════════════════════════════════
+           MARKDOWN RENDERER
+           ═══════════════════════════════════════════ */
+        function renderMarkdown(text) {
+            let html = text;
+            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_,l,c) => '<pre><code>'+escapeHtml(c.trim())+'</code></pre>');
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            html = html.replace(/^(\|.+\|)\n(\|[-|: ]+\|)\n((?:\|.+\|\n?)+)/gm, (m,h,s,b) => {
+                const ths = h.split('|').filter(c=>c.trim()).map(c=>'<th>'+c.trim()+'</th>').join('');
+                const trs = b.trim().split('\n').map(r => {
+                    const tds = r.split('|').filter(c=>c.trim()).map(c=>'<td>'+c.trim()+'</td>').join('');
+                    return '<tr>'+tds+'</tr>';
+                }).join('');
+                return '<table><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table>';
+            });
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+            html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+            html = html.replace(/(<li>.*<\/li>\n?)+/g, m => '<ul>'+m+'</ul>');
+            html = html.replace(/\n\n/g, '<br><br>');
+            return html;
+        }
+        function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+        /* ═══════════════════════════════════════════
+           MESSAGES
+           ═══════════════════════════════════════════ */
+        function goBackToMenu() {
+            welcome.style.display = '';
+            document.querySelectorAll('#messages > .message').forEach(m => m.style.display = 'none');
+            backBtn.style.display = 'none';
+            document.getElementById('newChatBtn').style.display = 'none';
+        }
+
+        function newConversation() {
+            sessionId = null;  // Reset session — next message creates new one
+            messagesEl.querySelectorAll('.message').forEach(m => m.remove());
+            welcome.style.display = '';
+            backBtn.style.display = 'none';
+            document.getElementById('newChatBtn').style.display = 'none';
+        }
+
+        function addMessage(role, text, skipHistory = false) {
+            if (welcome.style.display !== 'none') welcome.style.display = 'none';
+            // Restaurar mensajes ocultos al volver del menu
+            document.querySelectorAll('#messages > .message').forEach(m => m.style.display = '');
+            backBtn.style.display = 'inline-flex';
+            document.getElementById('newChatBtn').style.display = 'inline-flex';
+            const msg = document.createElement('div');
+            msg.className = 'message '+role;
+            const av = document.createElement('div');
+            av.className = 'message-avatar';
+            av.textContent = role === 'user' ? 'Yo' : 'PBAI';
+            const ct = document.createElement('div');
+            ct.className = 'message-content';
+            const bb = document.createElement('div');
+            bb.className = 'message-bubble';
+            if (role === 'assistant') bb.innerHTML = renderMarkdown(text);
+            else bb.textContent = text;
+            ct.appendChild(bb); msg.appendChild(av); msg.appendChild(ct);
+            messagesEl.appendChild(msg);
+
+            // No need to track history — Claude CLI handles it via --resume
+
+            scrollToBottom();
+            return msg;
+        }
+        function addTypingIndicator() {
+            const msg = document.createElement('div');
+            msg.className = 'message assistant'; msg.id = 'typingMsg';
+            const av = document.createElement('div'); av.className = 'message-avatar'; av.textContent = 'PBAI';
+            const ct = document.createElement('div'); ct.className = 'message-content';
+            const bb = document.createElement('div'); bb.className = 'message-bubble';
+            bb.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+            ct.appendChild(bb); msg.appendChild(av); msg.appendChild(ct);
+            messagesEl.appendChild(msg); scrollToBottom();
+        }
+        function removeTypingIndicator() { const el = document.getElementById('typingMsg'); if(el) el.remove(); }
+        function scrollToBottom() { requestAnimationFrame(() => { chatContainer.scrollTop = chatContainer.scrollHeight; }); }
+
+        /* ═══════════════════════════════════════════
+           SEND MESSAGE
+           ═══════════════════════════════════════════ */
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text || isWaiting) return;
+            isWaiting = true; sendBtn.disabled = true;
+            userInput.value = ''; autoResize();
+            addMessage('user', text); addTypingIndicator();
+            statusDot.className = 'status-dot loading';
+            statusText.textContent = 'Procesando...';
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        tone: currentTone,
+                        session_id: sessionId,
+                    }),
+                });
+                const data = await res.json();
+                removeTypingIndicator();
+                // Store session_id from Claude CLI
+                if (data.session_id) sessionId = data.session_id;
+                if (data.error) addMessage('assistant', 'Error: '+data.error);
+                else addMessage('assistant', data.response || 'Sin respuesta.');
+            } catch (err) {
+                removeTypingIndicator();
+                addMessage('assistant', 'Error de conexion: '+err.message+'.\nVerifica que el servidor este corriendo.');
+            } finally {
+                isWaiting = false; sendBtn.disabled = false;
+                updateHeaderStatus();
+                userInput.focus();
+            }
+        }
+
+        /* ═══════════════════════════════════════════
+           TEXTAREA
+           ═══════════════════════════════════════════ */
+        function autoResize() {
+            userInput.style.height = 'auto';
+            userInput.style.height = Math.min(userInput.scrollHeight, 120) + 'px';
+        }
+        userInput.addEventListener('input', autoResize);
+        userInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        });
+
+        /* ═══════════════════════════════════════════
+           STATUS CHECK
+           ═══════════════════════════════════════════ */
+        function updateHeaderStatus() {
+            const s = serverStatus;
+            if (s.pbi_connected && s.report_found) {
+                statusDot.className = 'status-dot ok';
+                statusText.textContent = 'Todo listo';
+            } else if (s.pbi_connected || s.report_found) {
+                statusDot.className = 'status-dot partial';
+                statusText.textContent = s.pbi_connected ? 'PBI conectado' : 'Solo reportes';
+            } else if (s.pbi_installed) {
+                statusDot.className = 'status-dot off';
+                statusText.textContent = 'Sin conexion PBI';
+            } else {
+                statusDot.className = 'status-dot off';
+                statusText.textContent = 'pbi-cli no encontrado';
+            }
+        }
+
+        /* ═══════════════════════════════════════════
+           AUTH & USAGE METRICS
+           ═══════════════════════════════════════════ */
+        let currentUser = null;
+        let isAdmin = false;
+
+        async function checkAuth() {
+            try {
+                const res = await fetch('/api/auth');
+                const data = await res.json();
+                currentUser = data.user;
+                isAdmin = data.is_admin;
+
+                // Show user badge
+                const badge = document.getElementById('userBadge');
+                badge.textContent = (isAdmin ? '👑 ' : '👤 ') + currentUser;
+                badge.style.display = 'inline';
+
+                // Show metrics toggle for admin
+                if (isAdmin) {
+                    const configToggle = document.getElementById('configToggle');
+                    if (configToggle) {
+                        configToggle.textContent = '⚙️ Config / Metricas';
+                    }
+                }
+
+                // Block access if not authorized
+                if (!data.authorized) {
+                    document.getElementById('deniedUser').textContent = currentUser;
+                    document.getElementById('accessDenied').style.display = 'flex';
+                }
+            } catch (e) {
+                console.warn('Auth check failed:', e);
+            }
+        }
+
+        async function loadMetrics() {
+            if (!isAdmin) return;
+            try {
+                const res = await fetch('/api/usage-stats');
+                if (!res.ok) return;
+                const stats = await res.json();
+
+                document.getElementById('metricMessages').textContent = stats.total_messages || 0;
+                document.getElementById('metricSessions').textContent = stats.unique_sessions || 0;
+                document.getElementById('metricUsers').textContent = stats.unique_users || 0;
+                document.getElementById('metricEvents').textContent = stats.total_events || 0;
+
+                // Draw activity chart
+                drawActivityChart(stats.daily_activity || []);
+
+                // Populate recent events table
+                const tbody = document.getElementById('recentEventsBody');
+                tbody.innerHTML = '';
+                (stats.recent_events || []).slice(0, 15).forEach(ev => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid var(--border-subtle)';
+                    tr.innerHTML = '<td style="padding:2px 4px;">' + (ev.timestamp || '').substring(0, 16).replace('T', ' ') + '</td>'
+                        + '<td style="padding:2px 4px;">' + (ev.username || '-') + '</td>'
+                        + '<td style="padding:2px 4px;">' + (ev.event || '-') + '</td>';
+                    tbody.appendChild(tr);
+                });
+
+                // Store for CSV export
+                window._usageStats = stats;
+            } catch (e) {
+                console.warn('Metrics load failed:', e);
+            }
+        }
+
+        function drawActivityChart(data) {
+            const canvas = document.getElementById('activityChart');
+            if (!canvas || !data.length) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.offsetWidth || 200;
+            const h = 60;
+            canvas.width = w;
+            canvas.height = h;
+
+            const maxVal = Math.max(...data.map(d => d.count), 1);
+            const barW = Math.max(2, (w - data.length * 2) / data.length);
+
+            ctx.clearRect(0, 0, w, h);
+            data.forEach((d, i) => {
+                const barH = (d.count / maxVal) * (h - 15);
+                const x = i * (barW + 2);
+                const y = h - 10 - barH;
+
+                ctx.fillStyle = 'rgba(242, 200, 17, 0.7)';
+                ctx.fillRect(x, y, barW, barH);
+
+                // Date label (every 3rd bar)
+                if (i % 3 === 0 && data.length > 3) {
+                    ctx.fillStyle = '#5A6478';
+                    ctx.font = '7px sans-serif';
+                    ctx.fillText(d.date.substring(5), x, h - 1);
+                }
+            });
+        }
+
+        function toggleRecentEvents() {
+            const el = document.getElementById('recentEventsTable');
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function exportUsageCSV() {
+            const stats = window._usageStats;
+            if (!stats || !stats.recent_events) return;
+            const events = stats.recent_events;
+            const header = 'timestamp,username,hostname,event,session_id\n';
+            const rows = events.map(e =>
+                `${e.timestamp},${e.username},${e.hostname},${e.event},${e.session_id}`
+            ).join('\n');
+            const blob = new Blob([header + rows], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'pbi_assistant_usage_' + new Date().toISOString().slice(0, 10) + '.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/status');
+                serverStatus = await res.json();
+                updateSetupSteps(serverStatus);
+                updateHeaderStatus();
+                // Auto-show banner if not fully connected
+                if (!serverStatus.pbi_connected || !serverStatus.report_found) {
+                    setupBanner.classList.add('visible');
+                }
+            } catch {
+                statusDot.className = 'status-dot off';
+                statusText.textContent = 'Servidor offline';
+            }
+        }
+        checkStatus();
+        checkAuth().then(() => { if (isAdmin) loadMetrics(); });
+    </script>
+</body>
+</html>

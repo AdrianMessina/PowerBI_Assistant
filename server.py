@@ -1,0 +1,919 @@
+"""
+PBI CLI Chat — Web server
+Serves the chat UI and proxies messages to Claude CLI (with pbi-cli skills).
+Supports both local and cloud (Cloudera AI Workbench) deployment.
+"""
+
+import http.server
+import json
+import subprocess
+import os
+import sys
+import threading
+import webbrowser
+import time
+import signal
+import tempfile
+import argparse
+from pathlib import Path
+
+from usage_logger import ChatLogger
+
+# ─── Environment Detection ──────────────────────────────────────────────
+def is_cloud():
+    """Detect if running in Cloudera AI Workbench."""
+    return os.environ.get("CLOUD_MODE", "").lower() == "true" or \
+           os.environ.get("CDSW_APP_PORT") is not None
+
+def load_env():
+    """Load .env file if exists."""
+    env_path = Path(BASE_DIR) / ".env"
+    if env_path.exists():
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, val = line.split('=', 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(BASE_DIR)
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+# Load environment variables
+load_env()
+
+CLOUD_MODE = is_cloud()
+PORT = int(os.environ.get("CDSW_APP_PORT", os.environ.get("PORT", "5174")))
+
+# ─── Usage logger (singleton) ──────────────────────────────────────────────
+chat_logger = ChatLogger()
+
+# ─── Tone system prompts ────────────────────────────────────────────────────
+TONE_PROMPTS = {
+    "porteno": (
+        "INSTRUCCION OBLIGATORIA DE IDIOMA Y TONO: "
+        "Responde SIEMPRE en espanol rioplatense (porteno). "
+        "Usa voseo en todo momento (vos, tenes, podes, fijate, hacelo). "
+        "Se relajado y cercano, como un colega de laburo. "
+        "Evita el tuteo (tu, tienes, puedes) y el ustedeo. "
+        "Usa expresiones naturales del habla portena cuando corresponda. "
+        "Nunca cambies a ingles salvo para nombres de comandos o codigo.\n\n"
+    ),
+    "formal": (
+        "INSTRUCCION OBLIGATORIA DE IDIOMA Y TONO: "
+        "Responde SIEMPRE en espanol formal y profesional. "
+        "Usa usted en todo momento. "
+        "Mantene un tono tecnico, preciso y respetuoso. "
+        "Nunca cambies a ingles salvo para nombres de comandos o codigo.\n\n"
+    ),
+    "neutral": (
+        "INSTRUCCION OBLIGATORIA DE IDIOMA Y TONO: "
+        "Responde SIEMPRE en espanol neutro, claro y directo. "
+        "Usa un tono profesional pero accesible. "
+        "Se conciso y ve al grano. "
+        "Nunca cambies a ingles salvo para nombres de comandos o codigo.\n\n"
+    ),
+}
+
+# ─── Find Claude CLI ────────────────────────────────────────────────────────
+import shutil
+
+CLAUDE_PATH = None
+CLAUDE_AVAILABLE = False
+
+# Try to find Claude CLI
+for candidate in [
+    os.path.expanduser("~/OneDrive - YPF/Claude tests/node-v22.19.0-win-x64/claude.cmd"),
+    "claude.cmd",
+    "claude",
+    "/usr/local/bin/claude",
+    "/usr/bin/claude",
+    os.path.expanduser("~/.local/bin/claude"),
+]:
+    if os.path.isfile(candidate):
+        CLAUDE_PATH = candidate
+        CLAUDE_AVAILABLE = True
+        break
+    found = shutil.which(candidate)
+    if found:
+        CLAUDE_PATH = found
+        CLAUDE_AVAILABLE = True
+        break
+
+if CLAUDE_AVAILABLE:
+    print(f"[OK] Claude CLI: {CLAUDE_PATH}")
+else:
+    print("[WARN] Claude CLI no encontrado. La aplicacion funcionara en modo limitado.")
+    print("[INFO] Para habilitar chat con Claude, instala Claude CLI o configura CLAUDE_CLI_PATH")
+
+print(f"[OK] Proyecto: {PROJECT_DIR}")
+print(f"[OK] Modo: {'CLOUD' if CLOUD_MODE else 'LOCAL'}")
+
+# ─── Configuration helpers ──────────────────────────────────────────────────
+def load_config():
+    """Load configuration from config.json."""
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[WARN] No se pudo leer config.json: {e}")
+    return {"pbip_project_path": None, "search_directories": []}
+
+def save_config(config):
+    """Save configuration to config.json."""
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[ERROR] No se pudo guardar config.json: {e}")
+        return False
+
+def get_pbip_search_paths():
+    """Get list of directories to search for .pbip files.
+    Priority:
+    1. PBIP_PROJECT_PATH env var (if file exists)
+    2. pbip_project_path from config.json (if file exists)
+    3. search_directories from config.json
+    4. PROJECT_DIR (default fallback)
+    """
+    paths = []
+
+    # 1. Check environment variable
+    env_path = os.environ.get("PBIP_PROJECT_PATH")
+    if env_path and os.path.exists(env_path):
+        paths.append(env_path)
+
+    # 2. Check config file
+    config = load_config()
+    config_path = config.get("pbip_project_path")
+    if config_path and os.path.exists(config_path):
+        paths.append(config_path)
+
+    # 3. Add search directories from config
+    for dir_path in config.get("search_directories", []):
+        if os.path.isdir(dir_path):
+            paths.append(dir_path)
+
+    # 4. Default fallback
+    if PROJECT_DIR not in paths:
+        paths.append(PROJECT_DIR)
+
+    return paths
+
+
+# ─── Stream-JSON parser ─────────────────────────────────────────────────────
+def parse_stream_json(output):
+    """Parse stream-json output from Claude CLI.
+    Returns (response_text, session_id)."""
+    text_parts = []
+    session_id = None
+
+    for line in output.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+            # Extract session ID from any event that has it
+            if event.get("session_id") and not session_id:
+                session_id = event["session_id"]
+            # Extract text from assistant messages
+            if event.get("type") == "assistant":
+                msg = event.get("message", {})
+                for block in msg.get("content", []):
+                    if block.get("type") == "text":
+                        text_parts.append(block["text"])
+            # Extract from result events
+            if event.get("type") == "result":
+                result_text = event.get("result", "")
+                if result_text and result_text not in text_parts:
+                    text_parts.append(result_text)
+        except json.JSONDecodeError:
+            continue
+
+    return "\n".join(text_parts), session_id
+
+
+class ChatHandler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=BASE_DIR, **kwargs)
+
+    def do_POST(self):
+        if self.path == "/api/chat":
+            self._handle_chat()
+        elif self.path == "/api/pbi":
+            self._handle_pbi()
+        elif self.path == "/api/set-pbip-path":
+            self._handle_set_pbip_path()
+        elif self.path == "/api/switch-connection":
+            self._handle_switch_connection()
+        elif self.path == "/api/upload-pbip":
+            self._handle_upload_pbip()
+        elif self.path == "/api/discover-pbip":
+            self._handle_discover_pbip()
+        else:
+            self.send_error(404)
+
+    def do_GET(self):
+        if self.path == "/" or self.path == "":
+            self.path = "/index.html"
+        elif self.path == "/api/status":
+            self._handle_status()
+            return
+        elif self.path == "/api/auth":
+            self._handle_auth()
+            return
+        elif self.path == "/api/usage-stats":
+            self._handle_usage_stats()
+            return
+        elif self.path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+        super().do_GET()
+
+    def guess_type(self, path):
+        """Ensure HTML is served with UTF-8 charset."""
+        mime = super().guess_type(path)
+        if mime == "text/html":
+            return "text/html; charset=utf-8"
+        return mime
+
+    def _handle_status(self):
+        """Return granular status: pbi-cli installed, PBI connected, report found."""
+        status = {
+            "pbi_installed": False,
+            "pbi_connected": False,
+            "connection_name": None,
+            "report_found": False,
+            "report_path": None,
+        }
+
+        # 1. Check pbi-cli is installed
+        try:
+            r = subprocess.run(
+                "pbi --version",
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=10,
+                cwd=PROJECT_DIR, shell=True,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                status["pbi_installed"] = True
+                status["pbi_version"] = r.stdout.strip()
+        except Exception:
+            pass
+
+        # 2. Check active PBI Desktop connection(s)
+        try:
+            # Get last active connection
+            r = subprocess.run(
+                "pbi --json connections last",
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=10,
+                cwd=PROJECT_DIR, shell=True,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                data = json.loads(r.stdout)
+                if data.get("name"):
+                    status["pbi_connected"] = True
+                    status["connection_name"] = data["name"]
+                    status["connection_port"] = data.get("port")
+
+                    # Try to get the report name from Power BI Desktop window title
+                    try:
+                        # Get window title from PBIDesktop.exe process
+                        # Use cp850 encoding which is the default for Spanish Windows console
+                        window_title_cmd = subprocess.run(
+                            ['tasklist', '/FI', 'IMAGENAME eq PBIDesktop.exe', '/V', '/FO', 'CSV'],
+                            capture_output=True, text=True, encoding="cp850",
+                            errors="replace", timeout=5,
+                        )
+                        if window_title_cmd.returncode == 0 and window_title_cmd.stdout.strip():
+                            import csv
+                            from io import StringIO
+
+                            # Parse CSV output
+                            csv_reader = csv.DictReader(StringIO(window_title_cmd.stdout))
+                            for row in csv_reader:
+                                # Try to get window title using various column name variations
+                                window_title = ""
+                                for key in row.keys():
+                                    if "tulo" in key.lower() and "ventana" in key.lower():  # Matches "Título de ventana"
+                                        window_title = row[key].strip()
+                                        break
+                                if not window_title:  # Fallback for English
+                                    window_title = row.get("Window Title", "").strip()
+
+                                # Skip processes without window title or with system titles
+                                if window_title and window_title not in ["N/A", "No aplicable", ""]:
+                                    # Remove " - Power BI Desktop" suffix if present
+                                    if " - Power BI Desktop" in window_title:
+                                        window_title = window_title.replace(" - Power BI Desktop", "")
+                                    # Remove "*" (unsaved changes indicator) if present
+                                    window_title = window_title.replace("*", "").strip()
+
+                                    if window_title:
+                                        status["report_found"] = True
+                                        status["report_name"] = window_title
+                                        status["report_source"] = "window_title"
+                                        print(f"[DEBUG] Detected file name from window: {window_title}")
+                                        break
+                    except Exception as e:
+                        # Log error for debugging
+                        print(f"[DEBUG] Error getting window title: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        pass
+
+                    # Fallback: try to get the database name from the active connection
+                    if not status["report_found"]:
+                        try:
+                            db_list = subprocess.run(
+                                "pbi --json database list",
+                                capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=10,
+                                cwd=PROJECT_DIR, shell=True,
+                            )
+                            if db_list.returncode == 0 and db_list.stdout.strip():
+                                db_data = json.loads(db_list.stdout)
+                                # database list returns an array of databases
+                                # For Power BI Desktop, typically there's only one database
+                                if isinstance(db_data, list) and len(db_data) > 0:
+                                    # Get the first database name (usually the report name)
+                                    db_name = db_data[0].get("name") or db_data[0].get("Name")
+                                    if db_name:
+                                        status["report_found"] = True
+                                        status["report_name"] = db_name
+                                        status["report_source"] = "database_name"
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # Get all available connections
+        try:
+            r = subprocess.run(
+                "pbi --json connections list",
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=10,
+                cwd=PROJECT_DIR, shell=True,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                connections_data = json.loads(r.stdout)
+                if isinstance(connections_data, list):
+                    status["all_connections"] = connections_data
+                    status["multiple_connections"] = len(connections_data) > 1
+        except Exception:
+            pass
+
+        # 3. Check for PBIR report project in configured paths (only if not found from active connection)
+        if not status["report_found"]:
+            try:
+                from pathlib import Path
+                search_paths = get_pbip_search_paths()
+
+                for search_path in search_paths:
+                    search_path_obj = Path(search_path)
+
+                    # If it's a direct .pbip file
+                    if search_path_obj.is_file() and search_path_obj.suffix == ".pbip":
+                        status["report_found"] = True
+                        status["report_path"] = str(search_path_obj)
+                        status["report_name"] = search_path_obj.stem
+                        status["report_source"] = "pbip_file"
+                        break
+
+                    # If it's a directory, search for *.Report or *.pbip
+                    if search_path_obj.is_dir():
+                        # Look for *.Report/definition/report.json
+                        for p in search_path_obj.rglob("*.Report"):
+                            defn = p / "definition" / "report.json"
+                            if defn.exists():
+                                status["report_found"] = True
+                                status["report_path"] = str(p)
+                                status["report_name"] = p.parent.name if p.parent != search_path_obj else p.name
+                                status["report_source"] = "pbip_folder"
+                                break
+
+                        # Look for *.pbip files
+                        if not status["report_found"]:
+                            for p in search_path_obj.glob("*.pbip"):
+                                status["report_found"] = True
+                                status["report_path"] = str(p)
+                                status["report_name"] = p.stem
+                                status["report_source"] = "pbip_file"
+                                break
+
+                    if status["report_found"]:
+                        break
+
+                # If no PBIP found, suggest conversion
+                if not status["report_found"] and status["pbi_connected"]:
+                    status["suggest_conversion"] = True
+                    status["search_paths"] = [str(p) for p in search_paths[:3]]  # Show first 3
+            except Exception as e:
+                status["error"] = str(e)
+                pass
+
+        self._json_response(status)
+
+    def _handle_chat(self):
+        """Send user message to Claude CLI with session persistence."""
+        # Check if Claude CLI is available
+        if not CLAUDE_AVAILABLE:
+            self._json_response({
+                "response": "⚠️ **Claude CLI no está configurado**\n\n"
+                           "Para habilitar el chat con Claude AI:\n\n"
+                           "1. Instalar Claude CLI en el entorno\n"
+                           "2. O configurar variable de entorno `CLAUDE_CLI_PATH`\n\n"
+                           "Mientras tanto, puedes usar las funcionalidades de análisis masivo de PBIP.",
+                "session_id": None,
+            })
+            return
+
+        body = self._read_body()
+        user_msg = body.get("message", "")
+        tone = body.get("tone", "porteno")
+        session_id = body.get("session_id")  # None on first message
+
+        if not user_msg:
+            self._json_response({"error": "Mensaje vacio"}, status=400)
+            return
+
+        temp_files = []
+        try:
+            # Write user message to temp file (stdin redirection)
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(user_msg)
+                user_temp = f.name
+                temp_files.append(user_temp)
+
+            # Build command based on whether we have a session
+            base_flags = '--print --verbose --output-format stream-json --dangerously-skip-permissions'
+
+            if session_id:
+                # RESUME existing conversation — Claude already has full context
+                cmd = f'"{CLAUDE_PATH}" --resume {session_id} {base_flags} < "{user_temp}"'
+            else:
+                # NEW conversation — include tone as system prompt
+                tone_instruction = TONE_PROMPTS.get(tone, TONE_PROMPTS["porteno"])
+                system_prompt = (
+                    tone_instruction +
+                    "\nEl usuario tiene Power BI Desktop abierto con un modelo/reporte. "
+                    "Esta usando pbi-cli.\n\n"
+                    "RESTRICCION CRITICA: Solo podes responder consultas relacionadas con Power BI, "
+                    "modelos semanticos, DAX, reportes, visualizaciones, datos y analisis de reportes. "
+                    "Si el usuario pregunta algo que NO tiene relacion con Power BI o analisis de datos, "
+                    "responde amablemente que solo podes ayudar con temas de Power BI y reportes."
+                )
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".txt", delete=False, encoding="utf-8"
+                ) as f:
+                    f.write(system_prompt)
+                    system_temp = f.name
+                    temp_files.append(system_temp)
+
+                cmd = f'"{CLAUDE_PATH}" {base_flags} --append-system-prompt-file "{system_temp}" < "{user_temp}"'
+
+            print(f"[CHAT] session={session_id or 'NEW'} msg={user_msg[:60]}...")
+            start_time = time.time()
+
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=PROJECT_DIR,
+                timeout=300,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            )
+
+            # Debug: log raw output for troubleshooting
+            if result.returncode != 0:
+                print(f"[CHAT] CLI exit code: {result.returncode}")
+            if result.stderr:
+                print(f"[CHAT] stderr: {result.stderr[:300]}")
+            raw_len = len(result.stdout or '')
+            print(f"[CHAT] raw stdout: {raw_len} chars")
+            if raw_len < 500:
+                print(f"[CHAT] stdout preview: {result.stdout[:500]}")
+
+            # Parse stream-json to extract text and session_id
+            response_text, new_session_id = parse_stream_json(result.stdout)
+
+            # Fallback: if stream-json parsing failed, try raw stdout
+            if not response_text:
+                response_text = result.stdout.strip()
+            if not response_text and result.stderr:
+                response_text = f"Error: {result.stderr.strip()}"
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            print(f"[CHAT] session={new_session_id or session_id} response={len(response_text or '')} chars ({duration_ms}ms)")
+
+            # Log usage event
+            chat_logger.log_chat(
+                user_msg=user_msg,
+                response_len=len(response_text or ''),
+                duration_ms=duration_ms,
+                tone=tone,
+                cli_session=new_session_id or session_id,
+            )
+
+            self._json_response({
+                "response": response_text or "Sin respuesta.",
+                "session_id": new_session_id or session_id,
+            })
+
+        except subprocess.TimeoutExpired:
+            self._json_response({"response": "La consulta tardo mas de 5 minutos. Intenta con algo mas especifico o dividila en pasos."})
+        except Exception as e:
+            self._json_response({"error": str(e)}, status=500)
+        finally:
+            for f in temp_files:
+                try:
+                    os.unlink(f)
+                except OSError:
+                    pass
+
+    def _handle_pbi(self):
+        """Execute a pbi command directly."""
+        body = self._read_body()
+        command = body.get("command", "")
+        if not command:
+            self._json_response({"error": "Comando vacio"}, status=400)
+            return
+
+        try:
+            safe_cmd = command.replace('"', '\\"')
+            result = subprocess.run(
+                f'pbi --json {safe_cmd}',
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+                cwd=PROJECT_DIR, shell=True,
+            )
+            try:
+                data = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                data = result.stdout.strip()
+            self._json_response({"result": data})
+        except Exception as e:
+            self._json_response({"error": str(e)}, status=500)
+
+    def _handle_set_pbip_path(self):
+        """Configure the PBIP project path."""
+        body = self._read_body()
+        pbip_path = body.get("path", "").strip()
+
+        if not pbip_path:
+            self._json_response({"error": "Path vacio"}, status=400)
+            return
+
+        # Validate path
+        from pathlib import Path
+        path_obj = Path(pbip_path)
+
+        # Check if it's a file or directory
+        if not path_obj.exists():
+            self._json_response({
+                "error": f"La ruta no existe: {pbip_path}",
+                "success": False
+            }, status=400)
+            return
+
+        # Load current config
+        config = load_config()
+
+        # If it's a .pbip file, set as direct path
+        if path_obj.is_file() and path_obj.suffix == ".pbip":
+            config["pbip_project_path"] = str(path_obj)
+            if save_config(config):
+                self._json_response({
+                    "success": True,
+                    "message": f"Ruta PBIP configurada: {path_obj.name}",
+                    "path": str(path_obj)
+                })
+            else:
+                self._json_response({"error": "No se pudo guardar la configuracion"}, status=500)
+
+        # If it's a directory, add to search directories
+        elif path_obj.is_dir():
+            if "search_directories" not in config:
+                config["search_directories"] = []
+            if str(path_obj) not in config["search_directories"]:
+                config["search_directories"].insert(0, str(path_obj))
+            if save_config(config):
+                self._json_response({
+                    "success": True,
+                    "message": f"Directorio agregado a busqueda: {path_obj.name}",
+                    "path": str(path_obj)
+                })
+            else:
+                self._json_response({"error": "No se pudo guardar la configuracion"}, status=500)
+
+        else:
+            self._json_response({
+                "error": "Debe ser un archivo .pbip o un directorio",
+                "success": False
+            }, status=400)
+
+    def _handle_upload_pbip(self):
+        """Handle .pbip file upload via multipart/form-data."""
+        content_type = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in content_type:
+            self._json_response({"error": "Content-Type debe ser multipart/form-data"}, status=400)
+            return
+
+        # Extract boundary from content-type
+        boundary = None
+        for part in content_type.split(';'):
+            part = part.strip()
+            if part.startswith('boundary='):
+                boundary = part.split('=', 1)[1].strip('"')
+                break
+
+        if not boundary:
+            self._json_response({"error": "No se encontro boundary en Content-Type"}, status=400)
+            return
+
+        # Read raw body
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length)
+
+        # Parse multipart to find file
+        boundary_bytes = boundary.encode()
+        parts = body.split(b'--' + boundary_bytes)
+
+        filename = None
+        file_data = None
+
+        for part in parts:
+            if b'filename="' in part:
+                # Extract filename
+                header_end = part.find(b'\r\n\r\n')
+                if header_end == -1:
+                    continue
+                header_section = part[:header_end].decode('utf-8', errors='replace')
+                # Find filename in Content-Disposition
+                for line in header_section.split('\r\n'):
+                    if 'filename="' in line:
+                        start = line.index('filename="') + 10
+                        end = line.index('"', start)
+                        filename = line[start:end]
+                        break
+                # Extract file content (skip headers + \r\n\r\n)
+                file_data = part[header_end + 4:]
+                # Remove trailing \r\n
+                if file_data.endswith(b'\r\n'):
+                    file_data = file_data[:-2]
+                break
+
+        if not filename or not file_data:
+            self._json_response({"error": "No se encontro archivo en el upload"}, status=400)
+            return
+
+        # Validate extension
+        if not filename.lower().endswith('.pbip'):
+            self._json_response({"error": f"Solo se aceptan archivos .pbip (recibido: {filename})"}, status=400)
+            return
+
+        # Save to uploads directory
+        uploads_dir = os.path.join(BASE_DIR, "uploads")
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        # Clean previous uploads
+        for old_file in os.listdir(uploads_dir):
+            try:
+                os.remove(os.path.join(uploads_dir, old_file))
+            except OSError:
+                pass
+
+        # Save file
+        file_path = os.path.join(uploads_dir, filename)
+        with open(file_path, 'wb') as f:
+            f.write(file_data)
+
+        # Update config
+        config = load_config()
+        config["pbip_project_path"] = file_path
+        if save_config(config):
+            chat_logger.log_event('pbip_uploaded', {'filename': filename, 'size': len(file_data)})
+            self._json_response({
+                "success": True,
+                "message": f"Archivo subido: {filename}",
+                "path": file_path,
+            })
+        else:
+            self._json_response({"error": "No se pudo guardar la configuracion"}, status=500)
+
+    def _handle_switch_connection(self):
+        """Switch active Power BI connection by port."""
+        body = self._read_body()
+        port = body.get("port", "")
+
+        if not port:
+            self._json_response({"error": "Puerto no especificado"}, status=400)
+            return
+
+        try:
+            r = subprocess.run(
+                f"pbi connect -d localhost:{port}",
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=15,
+                cwd=PROJECT_DIR, shell=True,
+            )
+            if r.returncode == 0:
+                self._json_response({
+                    "success": True,
+                    "message": f"Conectado a localhost:{port}"
+                })
+            else:
+                self._json_response({
+                    "error": r.stderr.strip() or "Error al conectar"
+                }, status=500)
+        except Exception as e:
+            self._json_response({"error": str(e)}, status=500)
+
+    def _handle_discover_pbip(self):
+        """Discover all .pbip files in configured search paths."""
+        body = self._read_body()
+        custom_paths = body.get("search_paths", [])
+
+        # Get search paths from config or use custom ones
+        if custom_paths:
+            search_paths = custom_paths
+        else:
+            search_paths = get_pbip_search_paths()
+
+        discovered = []
+        seen_paths = set()
+
+        try:
+            from pathlib import Path
+            import datetime
+
+            for search_path_str in search_paths:
+                search_path = Path(search_path_str)
+
+                if not search_path.exists():
+                    continue
+
+                # If it's a direct .pbip file
+                if search_path.is_file() and search_path.suffix == ".pbip":
+                    if str(search_path) not in seen_paths:
+                        discovered.append(self._extract_pbip_metadata(search_path))
+                        seen_paths.add(str(search_path))
+                    continue
+
+                # If it's a directory, search recursively for .pbip files
+                if search_path.is_dir():
+                    for pbip_file in search_path.rglob("*.pbip"):
+                        if str(pbip_file) not in seen_paths:
+                            discovered.append(self._extract_pbip_metadata(pbip_file))
+                            seen_paths.add(str(pbip_file))
+
+            # Sort by modification time (most recent first)
+            discovered.sort(key=lambda x: x["modified"], reverse=True)
+
+            self._json_response({
+                "success": True,
+                "count": len(discovered),
+                "files": discovered,
+                "search_paths": [str(p) for p in search_paths],
+            })
+
+        except Exception as e:
+            self._json_response({"error": str(e), "success": False}, status=500)
+
+    def _extract_pbip_metadata(self, pbip_path):
+        """Extract metadata from a .pbip file."""
+        import datetime
+        stat = pbip_path.stat()
+
+        return {
+            "name": pbip_path.stem,
+            "path": str(pbip_path),
+            "size": stat.st_size,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "modified": stat.st_mtime,
+            "modified_str": datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "parent_dir": pbip_path.parent.name,
+        }
+
+    def _handle_auth(self):
+        """Check if current Windows user is authorized."""
+        config = load_config()
+        username = os.environ.get('USERNAME', os.environ.get('USER', '')).lower()
+        whitelist = [u.strip().lower() for u in config.get('whitelist', []) if u.strip()]
+        admin_users = [u.strip().lower() for u in config.get('admin_users', []) if u.strip()]
+
+        # Empty whitelist = everyone authorized
+        authorized = not whitelist or username in whitelist
+        is_admin = username in admin_users
+
+        self._json_response({
+            'user': username,
+            'authorized': authorized,
+            'is_admin': is_admin,
+        })
+
+    def _handle_usage_stats(self):
+        """Return usage statistics (admin only)."""
+        config = load_config()
+        username = os.environ.get('USERNAME', os.environ.get('USER', '')).lower()
+        admin_users = [u.strip().lower() for u in config.get('admin_users', []) if u.strip()]
+
+        if username not in admin_users:
+            self._json_response({'error': 'No autorizado'}, status=403)
+            return
+
+        stats = chat_logger.get_stats()
+        self._json_response(stats)
+
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length)
+        return json.loads(raw) if raw else {}
+
+    def _json_response(self, data, status=200):
+        payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", len(payload))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, format, *args):
+        try:
+            first = str(args[0]) if args else ""
+            if "/api/" in first:
+                super().log_message(format, *args)
+        except Exception:
+            pass
+
+
+class ThreadedHTTPServer(http.server.HTTPServer):
+    """Handle each request in a separate thread so long-running API calls
+    don't block the browser from loading static files."""
+    from socketserver import ThreadingMixIn
+    allow_reuse_address = True
+
+    def process_request(self, request, client_address):
+        t = threading.Thread(target=self._handle, args=(request, client_address))
+        t.daemon = True
+        t.start()
+
+    def _handle(self, request, client_address):
+        try:
+            self.finish_request(request, client_address)
+        except Exception:
+            self.handle_error(request, client_address)
+        finally:
+            self.shutdown_request(request)
+
+
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="PBI CLI Chat Server")
+    parser.add_argument("--port", type=int, default=PORT, help=f"Port to run on (default: {PORT})")
+    args = parser.parse_args()
+
+    port = args.port
+    bind_address = "127.0.0.1" if CLOUD_MODE else "127.0.0.1"
+
+    server = ThreadedHTTPServer((bind_address, port), ChatHandler)
+
+    mode_label = "CLOUD" if CLOUD_MODE else "LOCAL"
+    print(f"\n{'='*50}")
+    print(f"  PBI CLI Chat [{mode_label}] — http://localhost:{port}")
+    print(f"{'='*50}")
+
+    if not CLOUD_MODE:
+        print(f"  Abriendo navegador...")
+        print(f"  Ctrl+C para detener\n")
+
+        # Open browser after a short delay (local mode only)
+        def open_browser():
+            time.sleep(1)
+            webbrowser.open(f"http://localhost:{port}")
+
+        threading.Thread(target=open_browser, daemon=True).start()
+    else:
+        print(f"  Modo Cloud: accede via Cloudera AI Workbench")
+        print(f"  Ctrl+C para detener\n")
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[Detenido]")
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()

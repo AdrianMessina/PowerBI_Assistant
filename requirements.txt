@@ -1,0 +1,42 @@
+# ============================================================
+# PBI CLI Chat - Dependencias
+# ============================================================
+# Python 3.10+ requerido
+#
+# Instalación:
+#   pip install -r requirements.txt
+# ============================================================
+
+# --- Core Dependencies ---
+pyyaml>=6.0.1
+requests>=2.27.0
+
+# --- Data Processing (para análisis masivo) ---
+pandas>=2.1.4
+numpy>=1.26.4
+
+# --- Visualization (para reportes de análisis) ---
+plotly>=5.18.0
+networkx>=3.0
+
+# --- Document Generation ---
+python-docx>=1.1.0
+jinja2>=3.1.4
+
+# --- Logging ---
+loguru>=0.7.0
+colorama>=0.4.6
+
+# --- Configuration ---
+python-dotenv>=1.0.0
+
+# ============================================================
+# CLOUD DEPLOYMENT (Cloudera AI Workbench)
+# ============================================================
+# Estas dependencias se instalan automáticamente en Cloudera
+
+# --- Autenticación (opcional) ---
+# ldap3>=2.9.1
+
+# --- Database Logging (opcional) ---
+# psycopg2-binary>=2.9.9
