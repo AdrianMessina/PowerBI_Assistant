@@ -1,0 +1,31 @@
+name: PBI CLI Chat
+description: Interfaz conversacional AI para Power BI con capacidades de análisis masivo
+author: YPF Data Analytics
+specification_version: 1.0
+prototype_version: 2.0
+
+environment:
+  PYTHON_VERSION: python3
+
+runtimes:
+  - editor: Workbench
+    kernel: Python 3.11
+    edition: Standard
+
+tasks:
+  - type: create_application
+    name: PBI CLI Chat
+    entity_label: pbi_cli_chat
+    script: cml/launch_app.py
+    short_summary: AI Assistant para Power BI + Análisis Masivo
+    long_summary: >
+      Interfaz conversacional con Claude AI integrada con pbi-cli.
+      Incluye modo normal (single PBIP) y modo masivo (batch operations)
+      con funcionalidades de análisis, fixes automáticos, optimización
+      de layout, y generación de documentación para múltiples reportes.
+    cpu: 2
+    memory: 4
+    environment_variables:
+      CLOUD_MODE: "true"
+      LOG_BACKEND: sqlite
+      LOG_SQLITE_PATH: /home/cdsw/pbi_cli_logs/usage.db
