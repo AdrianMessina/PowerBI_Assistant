@@ -354,6 +354,14 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             return "text/html; charset=utf-8"
         return mime
 
+    def end_headers(self):
+        """Prevent stale UI assets after a Cloudera redeployment."""
+        if self.command == "GET" and not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
+
     def _handle_status(self):
         """Return granular status: pbi-cli installed, PBI connected, report found."""
         status = {

@@ -1003,6 +1003,10 @@
             </button>
         </div>
         <div class="header-right">
+            <button id="businessReportHeaderBtn" class="back-btn" onclick="exportBusinessReport(this)" disabled
+                    title="Generar informe ejecutivo interactivo desde el PBIP">
+                📊 Informe KPI HTML
+            </button>
             <div class="tone-selector">
                 <button class="tone-btn active" data-tone="porteno" onclick="setTone('porteno',this)">Porteno</button>
                 <button class="tone-btn" data-tone="formal" onclick="setTone('formal',this)">Formal</button>
@@ -1058,8 +1062,8 @@
                 <!-- Option 1: File upload -->
                 <div class="setup-config-row" style="margin-bottom: 6px;">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
-                        <span style="font-size: 10px; color: var(--accent); font-weight: 600; white-space: nowrap;">📂 Subir .pbip</span>
-                        <input type="file" id="pbipFileInput" accept=".pbip" onchange="uploadPBIP(this)"
+                        <span style="font-size: 10px; color: var(--accent); font-weight: 600; white-space: nowrap;">📦 Subir proyecto PBIP (.zip)</span>
+                        <input type="file" id="pbipFileInput" accept=".zip,application/zip" onchange="uploadPBIP(this)"
                                style="font-size: 10px; color: var(--text-secondary); flex: 1;
                                       background: rgba(15,23,42,0.6); border: 1px dashed var(--border);
                                       border-radius: 6px; padding: 4px 8px; cursor: pointer;" />
@@ -1067,7 +1071,7 @@
                     <span id="uploadStatus" style="font-size: 9px; color: var(--text-muted);"></span>
                 </div>
                 <!-- Separator -->
-                <div style="text-align: center; font-size: 9px; color: var(--text-muted); margin: 4px 0;">— o pegar ruta local —</div>
+                <div style="text-align: center; font-size: 9px; color: var(--text-muted); margin: 4px 0;">El ZIP debe incluir .pbip, .Report y .SemanticModel — o pegar ruta local</div>
                 <!-- Option 2: Manual path (existing) -->
                 <div class="setup-config-row">
                     <input type="text"
@@ -1076,6 +1080,19 @@
                            placeholder="C:\Reportes\MiReporte.pbip" />
                     <button onclick="setPBIPPath()" class="setup-config-btn">Guardar</button>
                     <button onclick="toggleConfigPanel()" class="setup-config-btn cancel">Cancelar</button>
+                </div>
+                <div style="border-top: 1px solid var(--border); margin: 10px 0 8px;"></div>
+                <div class="setup-config-row">
+                    <input type="text" id="businessObjectiveInput" class="setup-config-input"
+                           placeholder="Objetivo de negocio: ventas, margen, operación, clientes..." />
+                    <button id="exportBusinessBtn" onclick="exportBusinessReport(this)" class="setup-config-btn"
+                            style="background: var(--accent); color: #111; font-weight: 700;">
+                        Exportar informe KPI HTML
+                    </button>
+                    <span id="businessReportStatus" style="font-size: 9px; color: var(--text-muted);"></span>
+                </div>
+                <div style="font-size: 9px; color: var(--text-muted); margin-top: 5px;">
+                    Genera KPI, DAX y recomendaciones desde el PBIP. No inventa valores que requieran ejecutar datos.
                 </div>
             </div>
 
@@ -1450,6 +1467,18 @@
             stepConn.className   = 'setup-step ' + (s.pbi_connected ? 'done' : 'warn');
             stepReport.className = 'setup-step ' + (s.report_found ? 'done' : 'warn');
 
+            const reportButtons = [
+                document.getElementById('businessReportHeaderBtn'),
+                document.getElementById('exportBusinessBtn'),
+            ];
+            reportButtons.forEach(button => {
+                if (!button) return;
+                button.disabled = !s.report_found;
+                button.title = s.report_found
+                    ? 'Generar informe ejecutivo interactivo desde el PBIP'
+                    : 'Primero subí el ZIP completo del proyecto PBIP';
+            });
+
             document.getElementById('stepCliIcon').textContent    = s.pbi_installed ? '\u2713' : '1';
             document.getElementById('stepConnIcon').textContent   = s.pbi_connected ? '\u2713' : '2';
             document.getElementById('stepReportIcon').textContent = s.report_found ? '\u2713' : '3';
@@ -1493,6 +1522,10 @@
                 pbipBadgeEl.innerHTML = '✅ ' + (s.report_name.length > 20
                     ? s.report_name.substring(0, 20) + '...'
                     : s.report_name);
+                pbipBadgeEl.style.display = 'inline-flex';
+            } else if (s.pbip_incomplete) {
+                pbipBadgeEl.className = 'setup-info-badge warning';
+                pbipBadgeEl.innerHTML = '⚠️ PBIP incompleto: subí el ZIP';
                 pbipBadgeEl.style.display = 'inline-flex';
             } else if (s.suggest_conversion) {
                 pbipBadgeEl.className = 'setup-info-badge warning';
@@ -1627,6 +1660,52 @@
                 }
             } catch (err) {
                 alert('❌ Error al configurar ruta: ' + err.message);
+            }
+        }
+
+        async function exportBusinessReport(triggerButton) {
+            const buttons = [
+                document.getElementById('businessReportHeaderBtn'),
+                document.getElementById('exportBusinessBtn'),
+            ].filter(Boolean);
+            const statusEl = document.getElementById('businessReportStatus');
+            const objective = document.getElementById('businessObjectiveInput').value.trim();
+            buttons.forEach(button => button.disabled = true);
+            const originalText = triggerButton ? triggerButton.textContent : '';
+            if (triggerButton) triggerButton.textContent = 'Generando informe...';
+            statusEl.textContent = 'Analizando PBIP y generando informe...';
+            statusEl.style.color = 'var(--accent)';
+            try {
+                const res = await fetch('/api/export-business-report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ objective }),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+                const blob = await res.blob();
+                const disposition = res.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename="?([^";]+)"?/i);
+                const filename = match ? match[1] : 'Informe_KPI_YPF.html';
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                statusEl.textContent = 'Informe HTML descargado';
+                statusEl.style.color = 'var(--green)';
+            } catch (err) {
+                statusEl.textContent = 'Error: ' + err.message;
+                statusEl.style.color = 'var(--red)';
+                alert('No se pudo generar el informe: ' + err.message);
+            } finally {
+                buttons.forEach(button => button.disabled = !serverStatus.report_found);
+                if (triggerButton) triggerButton.textContent = originalText;
             }
         }
 
