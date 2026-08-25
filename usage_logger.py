@@ -57,7 +57,8 @@ class ChatLogger:
             print(f"[WARN] Failed to log event: {e}")
 
     def log_chat(self, user_msg: str, response_len: int, duration_ms: int,
-                 tone: str, cli_session: Optional[str] = None):
+                 tone: str, cli_session: Optional[str] = None,
+                 latency: Optional[Dict[str, Any]] = None):
         """Log a chat interaction."""
         self.log_event('chat_message', {
             'message_preview': user_msg[:100],
@@ -65,6 +66,7 @@ class ChatLogger:
             'duration_ms': duration_ms,
             'tone': tone,
             'cli_session': cli_session,
+            'latency': latency or {},
         })
 
     def get_all_events(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:

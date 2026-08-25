@@ -37,14 +37,18 @@ def load_env():
                     os.environ.setdefault(key.strip(), val.strip())
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(BASE_DIR)
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+CONFIG_LOCAL_FILE = os.path.join(BASE_DIR, "config.local.json")
 
 # Load environment variables
 load_env()
 
 CLOUD_MODE = is_cloud()
 PORT = int(os.environ.get("CDSW_APP_PORT", os.environ.get("PORT", "5174")))
+PROJECT_DIR = os.path.abspath(os.environ.get(
+    "PBI_PROJECT_DIR",
+    BASE_DIR if CLOUD_MODE else os.path.dirname(BASE_DIR),
+))
 
 # ─── Usage logger (singleton) ──────────────────────────────────────────────
 chat_logger = ChatLogger()
@@ -83,14 +87,15 @@ CLAUDE_PATH = None
 CLAUDE_AVAILABLE = False
 
 # Try to find Claude CLI
-for candidate in [
+for candidate in filter(None, [
+    os.environ.get("CLAUDE_CLI_PATH"),
     os.path.expanduser("~/OneDrive - YPF/Claude tests/node-v22.19.0-win-x64/claude.cmd"),
     "claude.cmd",
     "claude",
     "/usr/local/bin/claude",
     "/usr/bin/claude",
     os.path.expanduser("~/.local/bin/claude"),
-]:
+]):
     if os.path.isfile(candidate):
         CLAUDE_PATH = candidate
         CLAUDE_AVAILABLE = True
@@ -112,19 +117,21 @@ print(f"[OK] Modo: {'CLOUD' if CLOUD_MODE else 'LOCAL'}")
 
 # ─── Configuration helpers ──────────────────────────────────────────────────
 def load_config():
-    """Load configuration from config.json."""
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"[WARN] No se pudo leer config.json: {e}")
-    return {"pbip_project_path": None, "search_directories": []}
+    """Load public defaults, overridden by the ignored local config."""
+    config = {"pbip_project_path": None, "search_directories": []}
+    for config_path in (CONFIG_FILE, CONFIG_LOCAL_FILE):
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config.update(json.load(f))
+        except Exception as e:
+            print(f"[WARN] No se pudo leer {os.path.basename(config_path)}: {e}")
+    return config
 
 def save_config(config):
-    """Save configuration to config.json."""
+    """Save machine-specific configuration outside version control."""
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open(CONFIG_LOCAL_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         return True
     except Exception as e:
@@ -202,7 +209,9 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
 
     def do_POST(self):
-        if self.path == "/api/chat":
+        if self.path == "/api/chat/stream":
+            self._handle_chat_stream()
+        elif self.path == "/api/chat":
             self._handle_chat()
         elif self.path == "/api/pbi":
             self._handle_pbi()
@@ -536,6 +545,219 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             self._json_response({"error": str(e)}, status=500)
         finally:
+            for f in temp_files:
+                try:
+                    os.unlink(f)
+                except OSError:
+                    pass
+
+    def _handle_chat_stream(self):
+        """Stream Claude CLI output to the browser as Server-Sent Events."""
+        request_started = time.perf_counter()
+        if not CLAUDE_AVAILABLE:
+            self._json_response({"error": "Claude CLI no esta configurado"}, status=503)
+            return
+
+        body = self._read_body()
+        user_msg = body.get("message", "")
+        tone = body.get("tone", "porteno")
+        session_id = body.get("session_id")
+        if not user_msg:
+            self._json_response({"error": "Mensaje vacio"}, status=400)
+            return
+
+        temp_files = []
+        process = None
+        timed_out = threading.Event()
+
+        def send_event(event_type, **data):
+            payload = json.dumps({"type": event_type, **data}, ensure_ascii=False)
+            self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+            self.wfile.flush()
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(user_msg)
+                user_temp = f.name
+                temp_files.append(user_temp)
+
+            base_flags = (
+                "--print --verbose --output-format stream-json "
+                "--include-partial-messages --dangerously-skip-permissions"
+            )
+            if session_id:
+                cmd = f'"{CLAUDE_PATH}" --resume {session_id} {base_flags} < "{user_temp}"'
+            else:
+                tone_instruction = TONE_PROMPTS.get(tone, TONE_PROMPTS["porteno"])
+                system_prompt = (
+                    tone_instruction
+                    + "\nEl usuario tiene Power BI Desktop abierto con un modelo/reporte. "
+                    "Esta usando pbi-cli.\n\n"
+                    "RESTRICCION CRITICA: Solo podes responder consultas relacionadas con Power BI, "
+                    "modelos semanticos, DAX, reportes, visualizaciones, datos y analisis de reportes. "
+                    "Si el usuario pregunta algo que NO tiene relacion con Power BI o analisis de datos, "
+                    "responde amablemente que solo podes ayudar con temas de Power BI y reportes."
+                )
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".txt", delete=False, encoding="utf-8"
+                ) as f:
+                    f.write(system_prompt)
+                    system_temp = f.name
+                    temp_files.append(system_temp)
+                cmd = f'"{CLAUDE_PATH}" {base_flags} --append-system-prompt-file "{system_temp}" < "{user_temp}"'
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            # The response has no Content-Length; closing it after `done` is
+            # how HTTP/1.0 clients and proxies detect the end of the stream.
+            self.send_header("Connection", "close")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.close_connection = True
+            send_event("start", session_id=session_id)
+            send_event("status", message="Iniciando asistente...")
+
+            print(f"[CHAT STREAM] session={session_id or 'NEW'} msg={user_msg[:60]}...")
+            start_time = time.time()
+            process = subprocess.Popen(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=PROJECT_DIR,
+                bufsize=1,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            )
+            cli_start_ms = int((time.perf_counter() - request_started) * 1000)
+            send_event("status", message="Analizando la consulta...")
+
+            stderr_parts = []
+            stderr_thread = threading.Thread(
+                target=lambda: stderr_parts.extend(process.stderr.readlines()), daemon=True
+            )
+            stderr_thread.start()
+
+            def stop_on_timeout():
+                timed_out.set()
+                if process.poll() is None:
+                    process.kill()
+
+            timer = threading.Timer(300, stop_on_timeout)
+            timer.daemon = True
+            timer.start()
+
+            response_parts = []
+            fallback_text = ""
+            new_session_id = session_id
+            emitted_deltas = False
+            first_event_ms = None
+            first_token_ms = None
+
+            for raw_line in process.stdout:
+                try:
+                    event = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+
+                elapsed_ms = int((time.perf_counter() - request_started) * 1000)
+                if first_event_ms is None:
+                    first_event_ms = elapsed_ms
+
+                if event.get("session_id"):
+                    new_session_id = event["session_id"]
+
+                if event.get("type") == "stream_event":
+                    inner = event.get("event", {})
+                    delta = inner.get("delta", {})
+                    if inner.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                        text_delta = delta.get("text", "")
+                        if text_delta:
+                            if first_token_ms is None:
+                                first_token_ms = elapsed_ms
+                            emitted_deltas = True
+                            response_parts.append(text_delta)
+                            send_event("delta", text=text_delta, session_id=new_session_id)
+                    elif inner.get("type") == "content_block_start":
+                        block = inner.get("content_block", {})
+                        if block.get("type") == "tool_use":
+                            tool_name = block.get("name", "herramienta")
+                            send_event(
+                                "status",
+                                message=f"Consultando Power BI ({tool_name})...",
+                                tool=tool_name,
+                            )
+                elif event.get("type") == "assistant":
+                    blocks = event.get("message", {}).get("content", [])
+                    tool_blocks = [block for block in blocks if block.get("type") == "tool_use"]
+                    if tool_blocks:
+                        tool_name = tool_blocks[-1].get("name", "herramienta")
+                        send_event(
+                            "status",
+                            message=f"Consultando Power BI ({tool_name})...",
+                            tool=tool_name,
+                        )
+                    assistant_text = "".join(
+                        block.get("text", "") for block in blocks if block.get("type") == "text"
+                    )
+                    if assistant_text:
+                        fallback_text = assistant_text
+                elif event.get("type") == "result" and event.get("result"):
+                    fallback_text = event["result"]
+
+            process.wait()
+            timer.cancel()
+            stderr_thread.join(timeout=1)
+
+            if timed_out.is_set():
+                send_event("error", error="La consulta tardo mas de 5 minutos.")
+                return
+            if process.returncode != 0:
+                error_text = "".join(stderr_parts).strip() or f"Claude CLI finalizo con codigo {process.returncode}"
+                send_event("error", error=error_text[:1000])
+                return
+            if not emitted_deltas and fallback_text:
+                first_token_ms = int((time.perf_counter() - request_started) * 1000)
+                response_parts.append(fallback_text)
+                send_event("delta", text=fallback_text, session_id=new_session_id)
+
+            response_text = "".join(response_parts)
+            duration_ms = int((time.time() - start_time) * 1000)
+            total_ms = int((time.perf_counter() - request_started) * 1000)
+            latency = {
+                "cli_start_ms": cli_start_ms,
+                "first_event_ms": first_event_ms,
+                "first_token_ms": first_token_ms,
+                "total_ms": total_ms,
+            }
+            chat_logger.log_chat(
+                user_msg=user_msg,
+                response_len=len(response_text),
+                duration_ms=duration_ms,
+                tone=tone,
+                cli_session=new_session_id,
+                latency=latency,
+            )
+            print(f"[CHAT STREAM] session={new_session_id} response={len(response_text)} chars ({duration_ms}ms)")
+            send_event("done", session_id=new_session_id, latency=latency)
+
+        except (BrokenPipeError, ConnectionResetError):
+            if process and process.poll() is None:
+                process.kill()
+            print("[CHAT STREAM] browser disconnected")
+        except Exception as e:
+            try:
+                send_event("error", error=str(e))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        finally:
+            if process and process.poll() is None:
+                process.kill()
             for f in temp_files:
                 try:
                     os.unlink(f)

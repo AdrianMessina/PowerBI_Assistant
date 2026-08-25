@@ -1,10 +1,6 @@
 {
-  "pbip_project_path": "C:\\Users\\SE46958\\1 - Claude - Proyecto viz\\PBI CLi 2.0\\pbi-cli\\web\\uploads\\Presentacion PBI 2026 2_arranged.pbip",
-  "search_directories": [
-    "C:\\Users\\SE46958\\OneDrive - YPF\\000 - Performance\\Presentacion PBI 2026 2_arranged.Report"
-  ],
+  "pbip_project_path": null,
+  "search_directories": [],
   "whitelist": [],
-  "admin_users": [
-    "se46958"
-  ]
+  "admin_users": []
 }
