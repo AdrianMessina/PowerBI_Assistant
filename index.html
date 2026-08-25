@@ -1096,24 +1096,24 @@
                 </div>
             </div>
 
-            <!-- Admin: Usage metrics panel -->
+            <!-- Usage metrics panel: personal scope, global for configured admins -->
             <div class="setup-expanded-panel" id="metricsPanel">
                 <!-- Separator -->
                 <div style="border-top: 1px solid rgba(242,200,17,0.15); margin-bottom: 10px;"></div>
 
                 <div style="font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 10px;">
-                    📊 Metricas de uso
+                    📊 Métricas de uso <span id="metricsScope" style="color:var(--text-muted);font-weight:400;"></span>
                 </div>
 
                 <!-- KPIs row -->
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 12px;">
                     <div style="background: rgba(242,200,17,0.08); border: 1px solid rgba(242,200,17,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
                         <div id="metricMessages" style="font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1.2;">-</div>
                         <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Mensajes</div>
                     </div>
                     <div style="background: rgba(16,124,16,0.08); border: 1px solid rgba(16,124,16,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
                         <div id="metricSessions" style="font-size: 22px; font-weight: 700; color: var(--green); line-height: 1.2;">-</div>
-                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Sesiones</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Conversaciones</div>
                     </div>
                     <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
                         <div id="metricUsers" style="font-size: 22px; font-weight: 700; color: var(--cat-analisis); line-height: 1.2;">-</div>
@@ -1123,6 +1123,19 @@
                         <div id="metricEvents" style="font-size: 22px; font-weight: 700; color: var(--cat-modelado); line-height: 1.2;">-</div>
                         <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Eventos</div>
                     </div>
+                    <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); border-radius: 8px; padding: 8px 12px; text-align: center;">
+                        <div id="metricTokens" style="font-size: 22px; font-weight: 700; color: var(--orange); line-height: 1.2;">-</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">Tokens consumidos</div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:10px;max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:6px;">
+                    <table style="width:100%;font-size:9px;border-collapse:collapse;color:var(--text-secondary);">
+                        <thead><tr style="background:var(--bg-elevated);position:sticky;top:0;">
+                            <th style="padding:5px;text-align:left;">PBIP</th><th>Conversaciones</th>
+                            <th>Mensajes</th><th>Tokens usados</th><th>Tokens contexto estimados</th>
+                        </tr></thead><tbody id="projectUsageBody"></tbody>
+                    </table>
                 </div>
 
                 <!-- Activity chart -->
@@ -1549,10 +1562,8 @@
                 toggle.textContent = '⚙️ Configurar';
             } else {
                 panel.classList.add('active');
-                if (isAdmin) {
-                    metricsPanel.classList.add('active');
-                    loadMetrics();
-                }
+                metricsPanel.classList.add('active');
+                loadMetrics();
                 toggle.textContent = '❌ Cerrar';
             }
         }
@@ -1964,12 +1975,10 @@
                 badge.textContent = (isAdmin ? '👑 ' : '👤 ') + currentUser;
                 badge.style.display = 'inline';
 
-                // Show metrics toggle for admin
-                if (isAdmin) {
-                    const configToggle = document.getElementById('configToggle');
-                    if (configToggle) {
-                        configToggle.textContent = '⚙️ Config / Metricas';
-                    }
+                // Every user sees personal metrics; configured admins see global metrics.
+                const configToggle = document.getElementById('configToggle');
+                if (configToggle) {
+                    configToggle.textContent = '⚙️ Config / Métricas';
                 }
 
                 // Block access if not authorized
@@ -1983,7 +1992,6 @@
         }
 
         async function loadMetrics() {
-            if (!isAdmin) return;
             try {
                 const res = await fetch('/api/usage-stats');
                 if (!res.ok) return;
@@ -1993,6 +2001,27 @@
                 document.getElementById('metricSessions').textContent = stats.unique_sessions || 0;
                 document.getElementById('metricUsers').textContent = stats.unique_users || 0;
                 document.getElementById('metricEvents').textContent = stats.total_events || 0;
+                document.getElementById('metricTokens').textContent = Number(stats.total_tokens || 0).toLocaleString('es-AR');
+                document.getElementById('metricsScope').textContent = stats.scope === 'global'
+                    ? '· vista global' : '· ' + (stats.current_user || currentUser || 'usuario');
+
+                const projectBody = document.getElementById('projectUsageBody');
+                projectBody.innerHTML = '';
+                (stats.by_project || []).forEach(project => {
+                    const row = document.createElement('tr');
+                    row.style.borderTop = '1px solid var(--border-subtle)';
+                    [project.project, project.conversations, project.messages,
+                     Number(project.tokens || 0).toLocaleString('es-AR'),
+                     Number(project.estimated_context_tokens || 0).toLocaleString('es-AR')]
+                        .forEach((value, index) => {
+                            const cell = document.createElement('td');
+                            cell.textContent = value == null ? '-' : value;
+                            cell.style.padding = '5px';
+                            cell.style.textAlign = index === 0 ? 'left' : 'center';
+                            row.appendChild(cell);
+                        });
+                    projectBody.appendChild(row);
+                });
 
                 // Draw activity chart
                 drawActivityChart(stats.daily_activity || []);
@@ -2055,10 +2084,14 @@
             const stats = window._usageStats;
             if (!stats || !stats.recent_events) return;
             const events = stats.recent_events;
-            const header = 'timestamp,username,hostname,event,session_id\n';
-            const rows = events.map(e =>
-                `${e.timestamp},${e.username},${e.hostname},${e.event},${e.session_id}`
-            ).join('\n');
+            const csvCell = value => '"' + String(value == null ? '' : value).replace(/"/g, '""') + '"';
+            const header = 'timestamp,username,event,conversation_id,project,input_tokens,output_tokens,total_tokens\n';
+            const rows = events.map(e => {
+                const data = e.data || {}, tokens = data.tokens || {};
+                return [e.timestamp, e.username, e.event, e.conversation_id || data.cli_session,
+                        data.project || data.pbip_project, tokens.input_tokens,
+                        tokens.output_tokens, tokens.total_tokens].map(csvCell).join(',');
+            }).join('\n');
             const blob = new Blob([header + rows], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');

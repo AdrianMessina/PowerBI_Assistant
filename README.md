@@ -81,6 +81,14 @@ metadatos del modelo y genera:
 El informe no inventa resultados: cuando el PBIP aporta estructura pero no los
 datos ejecutados, identifica el valor como `Requiere ejecución sobre datos`.
 
+## Métricas de uso
+
+La aplicación conserva eventos en `logs/usage_YYYYMMDD.jsonl` dentro del
+proyecto de Cloudera. Registra usuario, PBIP, conversación, mensajes, latencia,
+tokens de entrada/salida informados por Foundry y una estimación del contexto
+PBIP al cargarlo. Cada usuario ve sus propias métricas; los usuarios de
+`admin_users` y `PROJECT_OWNER` ven el consolidado global y por proyecto.
+
 ## Archivos que no se publican
 
 - `.env` y configuraciones locales.

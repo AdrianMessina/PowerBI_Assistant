@@ -185,6 +185,24 @@ def sanitize_foundry_messages(messages):
                 clean.append({"role": message["role"], "content": blocks})
     return clean
 
+
+def add_message_usage(accumulator, message):
+    """Accumulate provider-reported token usage from an Anthropic message."""
+    usage = getattr(message, "usage", None)
+    if not usage:
+        return
+    for key in (
+        "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"
+    ):
+        value = getattr(usage, key, 0) or 0
+        accumulator[key] = accumulator.get(key, 0) + int(value)
+    accumulator["source"] = "provider"
+    accumulator["total_tokens"] = sum(
+        int(accumulator.get(key) or 0) for key in (
+            "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"
+        )
+    )
+
 print(f"[OK] Proyecto: {PROJECT_DIR}")
 print(f"[OK] Modo: {'CLOUD' if CLOUD_MODE else 'LOCAL'}")
 
@@ -309,6 +327,27 @@ def parse_stream_json(output):
 class ChatHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
+
+    def _request_username(self):
+        """Resolve the authenticated user forwarded by Cloudera's proxy."""
+        for header in (
+            "X-Forwarded-User", "X-Authenticated-User", "X-CDSW-User",
+            "X-Cloudera-User", "Remote-User", "X-Forwarded-Email",
+        ):
+            value = self.headers.get(header)
+            if value:
+                return value.split(",", 1)[0].strip().lower()
+        for env_name in ("CDSW_USER", "CDSW_PROJECT_USER", "PROJECT_OWNER", "USERNAME", "USER"):
+            value = os.environ.get(env_name)
+            if value:
+                return value.strip().lower()
+        return "unknown"
+
+    def _active_project_name(self):
+        configured_pbip = load_config().get("pbip_project_path")
+        if configured_pbip and validate_pbip_project(configured_pbip)[0]:
+            return Path(configured_pbip).stem
+        return None
 
     def do_POST(self):
         if self.path == "/api/chat/stream":
@@ -649,6 +688,8 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 duration_ms=duration_ms,
                 tone=tone,
                 cli_session=new_session_id or session_id,
+                username=self._request_username(),
+                project=self._active_project_name(),
             )
 
             self._json_response({
@@ -861,6 +902,8 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 tone=tone,
                 cli_session=new_session_id,
                 latency=latency,
+                username=self._request_username(),
+                project=self._active_project_name(),
             )
             print(f"[CHAT STREAM] session={new_session_id} response={len(response_text)} chars ({duration_ms}ms)")
             send_event("done", session_id=new_session_id, latency=latency)
@@ -990,6 +1033,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             response_parts = []
             tool_call_counts = {}
             tool_error_count = 0
+            token_usage = {}
             send_event("status", message="Analizando la consulta...")
 
             for _ in range(8):
@@ -1012,6 +1056,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                         response_parts.append(text_delta)
                         send_event("delta", text=text_delta, session_id=session_id)
                     final_message = stream.get_final_message()
+                add_message_usage(token_usage, final_message)
 
                 if first_event_ms is None:
                     first_event_ms = int((time.perf_counter() - request_started) * 1000)
@@ -1070,6 +1115,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                         messages=messages,
                         timeout=300,
                     )
+                    add_message_usage(token_usage, final_response)
                     final_content = [
                         serialize_foundry_content_block(block) for block in final_response.content
                     ]
@@ -1111,9 +1157,12 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 tone=tone,
                 cli_session=session_id,
                 latency=latency,
+                username=self._request_username(),
+                project=self._active_project_name(),
+                token_usage=token_usage or None,
             )
             print(f"[CHAT FOUNDRY] session={session_id} response={len(response_text)} chars ({total_ms}ms)")
-            send_event("done", session_id=session_id, latency=latency)
+            send_event("done", session_id=session_id, latency=latency, usage=token_usage)
 
         except (BrokenPipeError, ConnectionResetError):
             print("[CHAT FOUNDRY] browser disconnected")
@@ -1393,7 +1442,14 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
         config = load_config()
         config["pbip_project_path"] = str(pbip_path)
         if save_config(config):
-            chat_logger.log_event('pbip_uploaded', {'filename': filename, 'size': len(file_data)})
+            pbip_context, metadata_files = collect_pbip_context(pbip_path)
+            chat_logger.log_event('pbip_uploaded', {
+                'filename': filename,
+                'size': len(file_data),
+                'project': pbip_path.stem,
+                'metadata_files': metadata_files,
+                'estimated_context_tokens': max(1, (len(pbip_context) + 3) // 4),
+            }, username=self._request_username())
             self._json_response({
                 "success": True,
                 "message": f"Proyecto PBIP listo: {pbip_path.stem}",
@@ -1435,7 +1491,6 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             response = client.messages.create(
                 model=model,
                 max_tokens=8000,
-                temperature=0.2,
                 system=(
                     "Sos un analista senior de Power BI y performance de negocio. "
                     "Tu salida debe ser JSON valido y no debe inventar resultados numericos."
@@ -1448,6 +1503,8 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 if getattr(block, "type", "") == "text"
             )
             analysis = parse_business_analysis(raw_text)
+            export_usage = {}
+            add_message_usage(export_usage, response)
             report_html = render_business_html(
                 analysis,
                 project_name=pbip_path.stem,
@@ -1460,7 +1517,8 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 "project": pbip_path.stem,
                 "metadata_files": file_count,
                 "kpis": len(analysis.get("kpis", [])),
-            })
+                "tokens": export_usage,
+            }, username=self._request_username())
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
@@ -1570,13 +1628,14 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
     def _handle_auth(self):
         """Check if current Windows user is authorized."""
         config = load_config()
-        username = os.environ.get('USERNAME', os.environ.get('USER', '')).lower()
+        username = self._request_username()
         whitelist = [u.strip().lower() for u in config.get('whitelist', []) if u.strip()]
         admin_users = [u.strip().lower() for u in config.get('admin_users', []) if u.strip()]
+        project_owner = os.environ.get('PROJECT_OWNER', '').strip().lower()
 
         # Empty whitelist = everyone authorized
         authorized = not whitelist or username in whitelist
-        is_admin = username in admin_users
+        is_admin = username in admin_users or bool(project_owner and username == project_owner)
 
         self._json_response({
             'user': username,
@@ -1585,16 +1644,15 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _handle_usage_stats(self):
-        """Return usage statistics (admin only)."""
+        """Return global stats to admins and personal stats to other users."""
         config = load_config()
-        username = os.environ.get('USERNAME', os.environ.get('USER', '')).lower()
+        username = self._request_username()
         admin_users = [u.strip().lower() for u in config.get('admin_users', []) if u.strip()]
-
-        if username not in admin_users:
-            self._json_response({'error': 'No autorizado'}, status=403)
-            return
-
-        stats = chat_logger.get_stats()
+        project_owner = os.environ.get('PROJECT_OWNER', '').strip().lower()
+        is_admin = username in admin_users or bool(project_owner and username == project_owner)
+        stats = chat_logger.get_stats(username=None if is_admin else username)
+        stats['scope'] = 'global' if is_admin else 'user'
+        stats['current_user'] = username
         self._json_response(stats)
 
     def _read_body(self):
