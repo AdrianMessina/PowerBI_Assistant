@@ -146,6 +146,44 @@ POWER_BI_SKILLS = (
     "power-bi-visuals",
 )
 
+
+def serialize_foundry_content_block(block):
+    """Return only fields accepted by the Messages API on a later turn.
+
+    SDK response models can contain response-only fields such as
+    ``parsed_output``. Replaying model_dump() verbatim makes Foundry reject the
+    second request with HTTP 400.
+    """
+    raw = block if isinstance(block, dict) else block.model_dump(mode="json")
+    block_type = raw.get("type")
+    allowed_fields = {
+        "text": ("type", "text"),
+        "tool_use": ("type", "id", "name", "input"),
+        "tool_result": ("type", "tool_use_id", "content", "is_error"),
+    }
+    fields = allowed_fields.get(block_type)
+    if not fields:
+        return None
+    return {key: raw[key] for key in fields if key in raw}
+
+
+def sanitize_foundry_messages(messages):
+    """Sanitize persisted conversation history before sending it to Foundry."""
+    clean = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") not in ("user", "assistant"):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            clean.append({"role": message["role"], "content": content})
+            continue
+        if isinstance(content, list):
+            blocks = [serialize_foundry_content_block(block) for block in content]
+            blocks = [block for block in blocks if block]
+            if blocks:
+                clean.append({"role": message["role"], "content": blocks})
+    return clean
+
 print(f"[OK] Proyecto: {PROJECT_DIR}")
 print(f"[OK] Modo: {'CLOUD' if CLOUD_MODE else 'LOCAL'}")
 
@@ -863,7 +901,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             send_event("status", message="Conectando con Foundry...")
 
             with FOUNDRY_SESSIONS_LOCK:
-                messages = list(FOUNDRY_SESSIONS.get(session_id, []))
+                messages = sanitize_foundry_messages(FOUNDRY_SESSIONS.get(session_id, []))
             messages.append({"role": "user", "content": user_msg})
 
             system_prompt = (
@@ -952,7 +990,10 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
 
                 if first_event_ms is None:
                     first_event_ms = int((time.perf_counter() - request_started) * 1000)
-                assistant_content = [block.model_dump(mode="json") for block in final_message.content]
+                assistant_content = [
+                    serialize_foundry_content_block(block) for block in final_message.content
+                ]
+                assistant_content = [block for block in assistant_content if block]
                 messages.append({"role": "assistant", "content": assistant_content})
                 tool_uses = [block for block in final_message.content if block.type == "tool_use"]
                 if not tool_uses:
@@ -989,7 +1030,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
 
             # Keep bounded in-memory conversation context for direct SDK sessions.
             with FOUNDRY_SESSIONS_LOCK:
-                FOUNDRY_SESSIONS[session_id] = messages[-60:]
+                FOUNDRY_SESSIONS[session_id] = sanitize_foundry_messages(messages[-60:])
 
             total_ms = int((time.perf_counter() - request_started) * 1000)
             latency = {
