@@ -6,7 +6,7 @@ Interfaz conversacional con Claude AI + pbi-cli para Power BI, con capacidades d
 
 - Acceso a Cloudera AI Workbench
 - Python 3.11+
-- Claude CLI instalado (o accesible en el entorno)
+- Acceso corporativo a Microsoft Foundry
 
 ## 🚀 Deployment en Cloudera
 
@@ -73,22 +73,11 @@ BATCH_MAX_WORKERS=4
 ENABLE_MASS_MODE=true
 ```
 
-### 3. Verificar Claude CLI
+### 3. Proveedor de IA
 
-El servidor necesita acceso a Claude CLI. Opciones:
-
-**A) Claude CLI ya instalado en el entorno:**
-```bash
-which claude
-# Debería mostrar la ruta
-```
-
-**B) Instalar Claude CLI en el proyecto:**
-```bash
-# En una sesión de Workbench
-npm install -g @anthropic-ai/claude-code
-# O descargar el binario pre-compilado
-```
+En Cloudera, el servidor usa el SDK de Anthropic con Microsoft Foundry. No se
+necesita instalar Node ni Claude CLI. Claude CLI continúa siendo compatible
+para la ejecución local.
 
 ### 4. Configurar Microsoft Foundry
 
@@ -109,15 +98,7 @@ credenciales desde Windows ni publicar sus valores en GitHub.
 Verificar desde una sesión de Workbench:
 
 ```bash
-claude auth status
-claude --print --output-format stream-json "Responde solamente OK"
-```
-
-**C) Configurar ruta personalizada:**
-
-Agregar una variable de entorno al proyecto:
-```text
-CLAUDE_CLI_PATH=/ruta/personalizada/claude
+python -c "import anthropic; print(anthropic.__version__, hasattr(anthropic, 'AnthropicFoundry'))"
 ```
 
 ## 🎯 Lanzar la Aplicación
@@ -143,7 +124,7 @@ python server.py --port=8080
 ```
 web/
 ├── .project-metadata.yaml    # Config de Cloudera
-├── server.py                 # Backend HTTP + proxy Claude CLI
+├── server.py                 # Backend HTTP + Foundry/Claude CLI
 ├── index.html                # Frontend UI
 ├── usage_logger.py           # Sistema de logging
 ├── requirements.txt          # Dependencias Python
@@ -173,22 +154,12 @@ web/
    # Debería mostrar un número (ej: 8090)
    ```
 
-### Claude CLI no encontrado
+### Proveedor Foundry no disponible
 
-1. **Verificar instalación:**
-   ```bash
-   which claude
-   claude --version
-   ```
-
-2. **Si no está instalado:**
-   ```bash
-   # Opción A: npm
-   npm install -g @anthropic-ai/claude-code
-   
-   # Opción B: Descargar binario
-   # Contactar al equipo de Data Analytics
-   ```
+Verificar que `anthropic` esté instalado y que las variables
+`ANTHROPIC_FOUNDRY_BASE_URL`, `ANTHROPIC_FOUNDRY_API_KEY` y `ANTHROPIC_MODEL`
+estén configuradas en el proyecto. Reiniciar la sesión o aplicación después de
+modificar variables.
 
 ### Errores de permisos
 

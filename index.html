@@ -1801,7 +1801,7 @@
                         const meta = document.createElement('div');
                         meta.className = 'response-meta';
                         meta.textContent = `Primer token: ${formatSeconds(data.latency.first_token_ms)} · Total: ${formatSeconds(data.latency.total_ms)}`;
-                        meta.title = `Inicio CLI: ${formatSeconds(data.latency.cli_start_ms)} · Primer evento: ${formatSeconds(data.latency.first_event_ms)}`;
+                        meta.title = `Inicio motor: ${formatSeconds(data.latency.cli_start_ms)} · Primer evento: ${formatSeconds(data.latency.first_event_ms)}`;
                         assistantMessage.querySelector('.message-content').appendChild(meta);
                     } else if (data.type === 'error') {
                         throw new Error(data.error || 'Error desconocido');

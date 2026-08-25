@@ -15,6 +15,7 @@ import time
 import signal
 import tempfile
 import argparse
+import uuid
 from pathlib import Path
 
 from usage_logger import ChatLogger
@@ -109,8 +110,32 @@ for candidate in filter(None, [
 if CLAUDE_AVAILABLE:
     print(f"[OK] Claude CLI: {CLAUDE_PATH}")
 else:
-    print("[WARN] Claude CLI no encontrado. La aplicacion funcionara en modo limitado.")
-    print("[INFO] Para habilitar chat con Claude, instala Claude CLI o configura CLAUDE_CLI_PATH")
+    print("[INFO] Claude CLI no encontrado; comprobando proveedor Foundry.")
+
+# Direct Microsoft Foundry provider for environments without Claude CLI.
+FOUNDRY_AVAILABLE = False
+AnthropicFoundry = None
+if os.environ.get("ANTHROPIC_FOUNDRY_BASE_URL") and os.environ.get("ANTHROPIC_FOUNDRY_API_KEY"):
+    try:
+        from anthropic import AnthropicFoundry as _AnthropicFoundry
+        AnthropicFoundry = _AnthropicFoundry
+        FOUNDRY_AVAILABLE = True
+        print("[OK] Microsoft Foundry SDK configurado")
+    except ImportError as e:
+        print(f"[WARN] SDK de Anthropic no disponible: {e}")
+
+if not CLAUDE_AVAILABLE and not FOUNDRY_AVAILABLE:
+    print("[WARN] No hay un proveedor de IA configurado.")
+
+FOUNDRY_SESSIONS = {}
+FOUNDRY_SESSIONS_LOCK = threading.Lock()
+POWER_BI_SKILLS = (
+    "power-bi-custom-visuals", "power-bi-dax", "power-bi-deployment",
+    "power-bi-diagnostics", "power-bi-docs", "power-bi-filters",
+    "power-bi-modeling", "power-bi-pages", "power-bi-partitions",
+    "power-bi-report", "power-bi-security", "power-bi-themes",
+    "power-bi-visuals",
+)
 
 print(f"[OK] Proyecto: {PROJECT_DIR}")
 print(f"[OK] Modo: {'CLOUD' if CLOUD_MODE else 'LOCAL'}")
@@ -555,6 +580,9 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
         """Stream Claude CLI output to the browser as Server-Sent Events."""
         request_started = time.perf_counter()
         if not CLAUDE_AVAILABLE:
+            if FOUNDRY_AVAILABLE:
+                self._handle_foundry_stream(request_started)
+                return
             self._json_response({"error": "Claude CLI no esta configurado"}, status=503)
             return
 
@@ -763,6 +791,215 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                     os.unlink(f)
                 except OSError:
                     pass
+
+    def _handle_foundry_stream(self, request_started):
+        """Stream responses from Microsoft Foundry using the Anthropic SDK."""
+        body = self._read_body()
+        user_msg = body.get("message", "")
+        tone = body.get("tone", "porteno")
+        session_id = body.get("session_id") or str(uuid.uuid4())
+        if not user_msg:
+            self._json_response({"error": "Mensaje vacio"}, status=400)
+            return
+
+        def send_event(event_type, **data):
+            payload = json.dumps({"type": event_type, **data}, ensure_ascii=False)
+            self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+            self.wfile.flush()
+
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            self.send_header("Connection", "close")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.close_connection = True
+            send_event("start", session_id=session_id)
+            send_event("status", message="Conectando con Foundry...")
+
+            with FOUNDRY_SESSIONS_LOCK:
+                messages = list(FOUNDRY_SESSIONS.get(session_id, []))
+            messages.append({"role": "user", "content": user_msg})
+
+            system_prompt = (
+                TONE_PROMPTS.get(tone, TONE_PROMPTS["porteno"])
+                + "Sos un asistente especializado exclusivamente en Power BI, modelos semanticos, "
+                "DAX, PBIP, reportes y analisis de datos. Si una consulta no esta relacionada, "
+                "explica amablemente esa limitacion. Estas ejecutandote en Cloudera sobre Linux. "
+                "No podes acceder al Power BI Desktop de la PC del usuario; trabaja con archivos "
+                "disponibles en el directorio del proyecto. Para operar con Power BI, primero lee "
+                "la skill pertinente y despues usa run_pbi_cli. Usa argumentos separados, sin incluir "
+                "la palabra pbi. Pedi un archivo PBIP si el analisis requiere uno y no esta disponible."
+            )
+            tools = [
+                {
+                    "name": "read_powerbi_skill",
+                    "description": "Lee las instrucciones instaladas de una skill especializada de Power BI.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string", "enum": list(POWER_BI_SKILLS)}},
+                        "required": ["name"],
+                    },
+                },
+                {
+                    "name": "run_pbi_cli",
+                    "description": "Ejecuta pbi-cli de forma segura. Envia solamente los argumentos posteriores a pbi.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "arguments": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Ejemplo: [\"--json\", \"report\", \"info\", \"archivo.Report\"]",
+                            }
+                        },
+                        "required": ["arguments"],
+                    },
+                },
+            ]
+
+            client = AnthropicFoundry(
+                api_key=os.environ["ANTHROPIC_FOUNDRY_API_KEY"],
+                base_url=os.environ["ANTHROPIC_FOUNDRY_BASE_URL"],
+            )
+            model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL")
+            provider_start_ms = int((time.perf_counter() - request_started) * 1000)
+            first_event_ms = None
+            first_token_ms = None
+            response_parts = []
+            send_event("status", message="Analizando la consulta...")
+
+            for _ in range(8):
+                round_parts = []
+                with client.messages.stream(
+                    model=model,
+                    max_tokens=4096,
+                    system=system_prompt,
+                    messages=messages,
+                    tools=tools,
+                    timeout=300,
+                ) as stream:
+                    for text_delta in stream.text_stream:
+                        elapsed_ms = int((time.perf_counter() - request_started) * 1000)
+                        if first_event_ms is None:
+                            first_event_ms = elapsed_ms
+                        if first_token_ms is None:
+                            first_token_ms = elapsed_ms
+                        round_parts.append(text_delta)
+                        response_parts.append(text_delta)
+                        send_event("delta", text=text_delta, session_id=session_id)
+                    final_message = stream.get_final_message()
+
+                if first_event_ms is None:
+                    first_event_ms = int((time.perf_counter() - request_started) * 1000)
+                assistant_content = [block.model_dump(mode="json") for block in final_message.content]
+                messages.append({"role": "assistant", "content": assistant_content})
+                tool_uses = [block for block in final_message.content if block.type == "tool_use"]
+                if not tool_uses:
+                    # Defensive fallback for SDKs that produced a final text block without text_stream deltas.
+                    if not round_parts:
+                        fallback = "".join(
+                            block.text for block in final_message.content if block.type == "text"
+                        )
+                        if fallback:
+                            if first_token_ms is None:
+                                first_token_ms = int((time.perf_counter() - request_started) * 1000)
+                            response_parts.append(fallback)
+                            send_event("delta", text=fallback, session_id=session_id)
+                    break
+
+                tool_results = []
+                for tool_use in tool_uses:
+                    send_event(
+                        "status",
+                        message=f"Consultando Power BI ({tool_use.name})...",
+                        tool=tool_use.name,
+                    )
+                    result_text, is_error = self._execute_foundry_tool(tool_use.name, tool_use.input)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "content": result_text,
+                        "is_error": is_error,
+                    })
+                messages.append({"role": "user", "content": tool_results})
+                send_event("status", message="Interpretando resultados...")
+            else:
+                raise RuntimeError("Se alcanzo el limite de iteraciones de herramientas.")
+
+            # Keep bounded in-memory conversation context for direct SDK sessions.
+            with FOUNDRY_SESSIONS_LOCK:
+                FOUNDRY_SESSIONS[session_id] = messages[-60:]
+
+            total_ms = int((time.perf_counter() - request_started) * 1000)
+            latency = {
+                "cli_start_ms": provider_start_ms,
+                "first_event_ms": first_event_ms,
+                "first_token_ms": first_token_ms,
+                "total_ms": total_ms,
+            }
+            response_text = "".join(response_parts)
+            chat_logger.log_chat(
+                user_msg=user_msg,
+                response_len=len(response_text),
+                duration_ms=total_ms,
+                tone=tone,
+                cli_session=session_id,
+                latency=latency,
+            )
+            print(f"[CHAT FOUNDRY] session={session_id} response={len(response_text)} chars ({total_ms}ms)")
+            send_event("done", session_id=session_id, latency=latency)
+
+        except (BrokenPipeError, ConnectionResetError):
+            print("[CHAT FOUNDRY] browser disconnected")
+        except Exception as e:
+            print(f"[CHAT FOUNDRY] error: {e}")
+            try:
+                send_event("error", error=str(e))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    def _execute_foundry_tool(self, name, tool_input):
+        """Execute the small, allow-listed tool surface exposed to Foundry."""
+        if name == "read_powerbi_skill":
+            skill_name = str(tool_input.get("name", ""))
+            if skill_name not in POWER_BI_SKILLS:
+                return "Skill no permitida.", True
+            skill_path = Path.home() / ".claude" / "skills" / skill_name / "SKILL.md"
+            if not skill_path.is_file():
+                return f"La skill {skill_name} no esta instalada.", True
+            return skill_path.read_text(encoding="utf-8", errors="replace")[:50000], False
+
+        if name == "run_pbi_cli":
+            arguments = tool_input.get("arguments", [])
+            if not isinstance(arguments, list) or not all(isinstance(arg, str) for arg in arguments):
+                return "arguments debe ser una lista de textos.", True
+            if len(arguments) > 100 or any(len(arg) > 10000 for arg in arguments):
+                return "Argumentos fuera de los limites permitidos.", True
+            pbi_path = shutil.which("pbi") or shutil.which("pbi-cli")
+            if not pbi_path:
+                return "pbi-cli no esta disponible en PATH.", True
+            try:
+                result = subprocess.run(
+                    [pbi_path, *arguments],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    cwd=PROJECT_DIR,
+                    timeout=180,
+                    env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                )
+                output = (result.stdout or "")
+                if result.stderr:
+                    output += ("\n" if output else "") + result.stderr
+                output = output.strip() or f"Comando finalizado con codigo {result.returncode}, sin salida."
+                return output[:50000], result.returncode != 0
+            except subprocess.TimeoutExpired:
+                return "El comando pbi-cli supero los 180 segundos.", True
+
+        return f"Herramienta desconocida: {name}", True
 
     def _handle_pbi(self):
         """Execute a pbi command directly."""

@@ -1,8 +1,8 @@
 # PowerBI Assistant
 
-Interfaz web conversacional para analizar Power BI mediante Claude CLI y
-`pbi-cli`. Incluye respuestas en streaming, estados de ejecución y métricas de
-latencia.
+Interfaz web conversacional para analizar Power BI mediante Microsoft Foundry
+o Claude CLI y `pbi-cli`. Incluye respuestas en streaming, estados de ejecución
+y métricas de latencia.
 
 ## Ejecución local
 
@@ -37,9 +37,9 @@ CLAUDE_CLI_PATH=/ruta/al/binario/claude
 ```
 
 Las credenciales del LLM deben configurarse como secretos o variables del
-proyecto en Cloudera. Nunca deben agregarse al repositorio. `pbi-cli` y sus
-skills se instalan desde `requirements.txt`; Claude CLI debe estar disponible
-en el runtime.
+proyecto en Cloudera. Nunca deben agregarse al repositorio. `pbi-cli`, sus
+skills y el SDK de Anthropic se instalan desde `requirements.txt`. En Cloudera,
+la aplicación usa Foundry directamente y no necesita Node ni Claude CLI.
 
 Para Microsoft Foundry, la aplicación hereda estas variables:
 
