@@ -25,6 +25,7 @@ from usage_logger import ChatLogger
 from business_report import (
     build_business_prompt,
     collect_pbip_context,
+    inspect_pbip_project,
     parse_business_analysis,
     render_business_html,
 )
@@ -918,9 +919,14 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 "DAX, PBIP, reportes y analisis de datos. Si una consulta no esta relacionada, "
                 "explica amablemente esa limitacion. Estas ejecutandote en Cloudera sobre Linux. "
                 "No podes acceder al Power BI Desktop de la PC del usuario; trabaja con archivos "
-                "disponibles en el directorio del proyecto. Para operar con Power BI, primero lee "
-                "la skill pertinente y despues usa run_pbi_cli. Usa argumentos separados, sin incluir "
-                "la palabra pbi. Pedi un archivo PBIP si el analisis requiere uno y no esta disponible. "
+                "disponibles en el directorio del proyecto. En modo PBIP offline, usa primero "
+                "inspect_active_pbip para estadisticas, tablas, medidas, relaciones y archivos. "
+                "No intentes comandos de conexion a Power BI Desktop, database o DAX execute. "
+                "Usa read_powerbi_skill y run_pbi_cli solamente para operaciones de archivo que la "
+                "skill confirme como compatibles con PBIP offline. No narres cada intento: llama a "
+                "la herramienta directamente y entrega una respuesta consolidada. Si una herramienta "
+                "falla, no pruebes variantes repetitivas; explica la limitacion y continua con la "
+                "evidencia disponible. Pedi un archivo PBIP si el analisis requiere uno y no esta disponible. "
                 "Si el usuario pide un informe ejecutivo, KPI o HTML, recordale que puede generarlo "
                 "desde Configurar > Exportar informe KPI HTML con el PBIP activo."
             )
@@ -938,6 +944,15 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     system_prompt += "\n\nNo hay un proyecto PBIP completo disponible: " + "; ".join(issues)
             tools = [
+                {
+                    "name": "inspect_active_pbip",
+                    "description": (
+                        "Inspecciona directamente el PBIP activo en modo offline. Devuelve estadisticas, "
+                        "tablas, medidas, relaciones, paginas, visuales, advertencias y metadatos TMDL. "
+                        "Es la herramienta principal para salud, documentacion y analisis del modelo en Cloudera."
+                    ),
+                    "input_schema": {"type": "object", "properties": {}},
+                },
                 {
                     "name": "read_powerbi_skill",
                     "description": "Lee las instrucciones instaladas de una skill especializada de Power BI.",
@@ -973,6 +988,8 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             first_event_ms = None
             first_token_ms = None
             response_parts = []
+            tool_call_counts = {}
+            tool_error_count = 0
             send_event("status", message="Analizando la consulta...")
 
             for _ in range(8):
@@ -1024,7 +1041,18 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                         message=f"Consultando Power BI ({tool_use.name})...",
                         tool=tool_use.name,
                     )
-                    result_text, is_error = self._execute_foundry_tool(tool_use.name, tool_use.input)
+                    signature = tool_use.name + ":" + json.dumps(tool_use.input, sort_keys=True, ensure_ascii=False)
+                    tool_call_counts[signature] = tool_call_counts.get(signature, 0) + 1
+                    if tool_call_counts[signature] > 1:
+                        result_text = (
+                            "Esta misma herramienta ya fue ejecutada con estos argumentos. "
+                            "No la repitas: responde ahora con la evidencia disponible."
+                        )
+                        is_error = True
+                    else:
+                        result_text, is_error = self._execute_foundry_tool(tool_use.name, tool_use.input)
+                    if is_error:
+                        tool_error_count += 1
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tool_use.id,
@@ -1033,8 +1061,36 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                     })
                 messages.append({"role": "user", "content": tool_results})
                 send_event("status", message="Interpretando resultados...")
+                if tool_error_count >= 2:
+                    # Stop an unproductive tool loop and force a useful explanation.
+                    final_response = client.messages.create(
+                        model=model,
+                        max_tokens=4096,
+                        system=system_prompt,
+                        messages=messages,
+                        timeout=300,
+                    )
+                    final_content = [
+                        serialize_foundry_content_block(block) for block in final_response.content
+                    ]
+                    final_content = [block for block in final_content if block]
+                    messages.append({"role": "assistant", "content": final_content})
+                    final_text = "".join(
+                        block.get("text", "") for block in final_content if block.get("type") == "text"
+                    )
+                    if final_text:
+                        if first_token_ms is None:
+                            first_token_ms = int((time.perf_counter() - request_started) * 1000)
+                        response_parts.append(final_text)
+                        send_event("delta", text=final_text, session_id=session_id)
+                    break
             else:
-                raise RuntimeError("Se alcanzo el limite de iteraciones de herramientas.")
+                fallback = (
+                    "No pude completar todas las operaciones solicitadas dentro del límite seguro. "
+                    "El PBIP permanece cargado; probá pedir un análisis más específico."
+                )
+                response_parts.append(fallback)
+                send_event("delta", text=fallback, session_id=session_id)
 
             # Keep bounded in-memory conversation context for direct SDK sessions.
             with FOUNDRY_SESSIONS_LOCK:
@@ -1070,6 +1126,18 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
 
     def _execute_foundry_tool(self, name, tool_input):
         """Execute the small, allow-listed tool surface exposed to Foundry."""
+        if name == "inspect_active_pbip":
+            configured_pbip = load_config().get("pbip_project_path")
+            complete, issues = validate_pbip_project(configured_pbip) if configured_pbip else (False, [])
+            if not complete:
+                detail = " ".join(issues) if issues else "No hay un proyecto PBIP activo."
+                return detail, True
+            try:
+                inventory = inspect_pbip_project(configured_pbip)
+                return json.dumps(inventory, ensure_ascii=False), False
+            except OSError as e:
+                return f"No se pudo inspeccionar el PBIP: {e}", True
+
         if name == "read_powerbi_skill":
             skill_name = str(tool_input.get("name", ""))
             if skill_name not in POWER_BI_SKILLS:

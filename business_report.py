@@ -50,6 +50,79 @@ def collect_pbip_context(pbip_path, max_chars=140_000, max_file_chars=30_000):
     return "".join(sections), len(candidates)
 
 
+def inspect_pbip_project(pbip_path, max_context_chars=80_000):
+    """Return a deterministic offline inventory plus bounded PBIP source text."""
+    pbip_path = Path(pbip_path).resolve()
+    root = pbip_path.parent
+    context, text_file_count = collect_pbip_context(
+        pbip_path, max_chars=max_context_chars, max_file_chars=12_000
+    )
+    files = [path for path in root.rglob("*") if path.is_file()]
+    tmdl_files = [path for path in files if path.suffix.lower() == ".tmdl"]
+    tmdl_text = []
+    for path in tmdl_files:
+        try:
+            tmdl_text.append(path.read_text(encoding="utf-8-sig", errors="replace"))
+        except OSError:
+            continue
+    combined = "\n".join(tmdl_text)
+
+    def count(pattern):
+        return len(re.findall(pattern, combined, flags=re.I | re.M))
+
+    table_names = [
+        match.strip().strip("'")
+        for match in re.findall(r"^\s*table\s+(.+?)\s*$", combined, flags=re.I | re.M)
+    ]
+    measure_names = [
+        match.strip().strip("'")
+        for match in re.findall(r"^\s*measure\s+(.+?)\s*=", combined, flags=re.I | re.M)
+    ]
+    page_files = [
+        path for path in files
+        if path.name.lower() == "page.json" and "pages" in {part.lower() for part in path.parts}
+    ]
+    visual_files = [path for path in files if path.name.lower() == "visual.json"]
+    statistics = {
+        "project": pbip_path.stem,
+        "files": len(files),
+        "text_metadata_files": text_file_count,
+        "tmdl_files": len(tmdl_files),
+        "tables": len(table_names),
+        "columns": count(r"^\s*column\s+"),
+        "measures": len(measure_names),
+        "relationships": count(r"^\s*relationship\s+"),
+        "inactive_relationships": count(r"^\s*isActive\s*:\s*false"),
+        "bidirectional_relationships": count(r"^\s*crossFilteringBehavior\s*:\s*(both|bothDirections)"),
+        "calculated_columns": count(r"^\s*column\s+.+?\s*=\s*"),
+        "calculation_groups": count(r"^\s*calculationGroup\s*$"),
+        "report_pages": len(page_files),
+        "visuals": len(visual_files),
+    }
+    warnings = []
+    if not tmdl_files:
+        warnings.append("No se encontraron definiciones TMDL; el detalle del modelo puede estar limitado.")
+    if tmdl_files and not measure_names:
+        warnings.append("No se detectaron medidas explícitas en los archivos TMDL.")
+    if statistics["bidirectional_relationships"]:
+        warnings.append("Hay relaciones bidireccionales; revisar ambigüedad y costo de filtrado.")
+    if statistics["inactive_relationships"]:
+        warnings.append("Hay relaciones inactivas; validar que las medidas activen la relación correcta.")
+    if statistics["calculated_columns"]:
+        warnings.append("Hay columnas calculadas; revisar impacto en tamaño y tiempo de actualización.")
+
+    return {
+        "mode": "PBIP offline (sin ejecución de datos)",
+        "root": str(root),
+        "statistics": statistics,
+        "tables": table_names[:300],
+        "measures": measure_names[:500],
+        "warnings": warnings,
+        "files": [path.relative_to(root).as_posix() for path in files[:1000]],
+        "metadata_context": context,
+    }
+
+
 def build_business_prompt(project_name, objective, context):
     objective = (objective or "Diagnóstico ejecutivo general del negocio").strip()[:1000]
     return f"""
