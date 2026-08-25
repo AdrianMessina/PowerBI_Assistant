@@ -178,7 +178,8 @@ chmod 755 /home/cdsw/pbi_cli_logs
 - ✅ Integración con pbi-cli skills
 - ✅ Selector de tono (Porteño/Formal/Neutral)
 - ✅ Detección automática de PBIP
-- ✅ Upload de archivos .pbip
+- ✅ Upload y validación del proyecto PBIP completo en ZIP
+- ✅ Generación de KPI, cálculos DAX e informe HTML interactivo con identidad YPF
 - ✅ Múltiples conexiones Power BI Desktop
 - ✅ Sistema de logging de uso
 

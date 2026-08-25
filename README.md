@@ -53,6 +53,34 @@ ANTHROPIC_DEFAULT_SONNET_MODEL=<deployment-name>
 
 Más información en [README_CLOUDERA.md](README_CLOUDERA.md).
 
+## Uso de PBIP en Cloudera
+
+Cloudera trabaja en modo offline con el proyecto PBIP; no intenta conectarse
+al Power BI Desktop de la PC del usuario. Desde **Configurar**, se debe subir un
+ZIP que conserve junta la estructura exportada por Power BI Desktop:
+
+```text
+MiReporte.pbip
+MiReporte.Report/
+MiReporte.SemanticModel/
+```
+
+El `.pbip` solo es un descriptor y no sirve aislado. El servidor descomprime el
+ZIP, valida que existan los artifacts referenciados y recién entonces lo marca
+como proyecto activo. Los proyectos cargados quedan en `uploads/`, fuera de Git.
+
+Con un PBIP activo, **Configurar → Exportar informe KPI HTML** analiza los
+metadatos del modelo y genera:
+
+- KPI existentes y KPI de negocio propuestos.
+- Medidas y cálculos DAX con su fundamento y fuentes utilizadas.
+- Hallazgos, limitaciones y recomendaciones ejecutivas.
+- Un HTML autocontenido con logo de YPF, buscador, filtros, copia de DAX,
+  descarga del análisis en JSON e impresión a PDF.
+
+El informe no inventa resultados: cuando el PBIP aporta estructura pero no los
+datos ejecutados, identifica el valor como `Requiere ejecución sobre datos`.
+
 ## Archivos que no se publican
 
 - `.env` y configuraciones locales.

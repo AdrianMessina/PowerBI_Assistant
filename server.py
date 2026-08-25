@@ -16,9 +16,18 @@ import signal
 import tempfile
 import argparse
 import uuid
+import io
+import zipfile
+import stat
 from pathlib import Path
 
 from usage_logger import ChatLogger
+from business_report import (
+    build_business_prompt,
+    collect_pbip_context,
+    parse_business_analysis,
+    render_business_html,
+)
 
 # ─── Environment Detection ──────────────────────────────────────────────
 def is_cloud():
@@ -163,6 +172,35 @@ def save_config(config):
         print(f"[ERROR] No se pudo guardar config.json: {e}")
         return False
 
+def validate_pbip_project(pbip_path):
+    """Validate that a .pbip file and its referenced project artifacts exist."""
+    pbip_path = Path(pbip_path)
+    if not pbip_path.is_file() or pbip_path.suffix.lower() != ".pbip":
+        return False, ["No es un archivo .pbip valido."]
+    try:
+        data = json.loads(pbip_path.read_text(encoding="utf-8-sig"))
+    except Exception as e:
+        return False, [f"No se pudo leer el PBIP: {e}"]
+
+    referenced_paths = []
+    for artifact in data.get("artifacts", []):
+        if not isinstance(artifact, dict):
+            continue
+        for artifact_data in artifact.values():
+            if isinstance(artifact_data, dict) and artifact_data.get("path"):
+                referenced_paths.append(artifact_data["path"])
+    if not referenced_paths:
+        return False, ["El PBIP no declara artifacts."]
+
+    missing = []
+    for relative_path in referenced_paths:
+        artifact_path = (pbip_path.parent / relative_path).resolve()
+        if not artifact_path.exists():
+            missing.append(relative_path)
+    if missing:
+        return False, [f"Falta el artifact: {path}" for path in missing]
+    return True, []
+
 def get_pbip_search_paths():
     """Get list of directories to search for .pbip files.
     Priority:
@@ -246,6 +284,8 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_switch_connection()
         elif self.path == "/api/upload-pbip":
             self._handle_upload_pbip()
+        elif self.path == "/api/export-business-report":
+            self._handle_export_business_report()
         elif self.path == "/api/discover-pbip":
             self._handle_discover_pbip()
         else:
@@ -413,12 +453,16 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                     search_path_obj = Path(search_path)
 
                     # If it's a direct .pbip file
-                    if search_path_obj.is_file() and search_path_obj.suffix == ".pbip":
-                        status["report_found"] = True
-                        status["report_path"] = str(search_path_obj)
-                        status["report_name"] = search_path_obj.stem
-                        status["report_source"] = "pbip_file"
-                        break
+                    if search_path_obj.is_file() and search_path_obj.suffix.lower() == ".pbip":
+                        complete, issues = validate_pbip_project(search_path_obj)
+                        if complete:
+                            status["report_found"] = True
+                            status["report_path"] = str(search_path_obj)
+                            status["report_name"] = search_path_obj.stem
+                            status["report_source"] = "pbip_project"
+                            break
+                        status["pbip_incomplete"] = True
+                        status["pbip_issues"] = issues
 
                     # If it's a directory, search for *.Report or *.pbip
                     if search_path_obj.is_dir():
@@ -830,8 +874,23 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 "No podes acceder al Power BI Desktop de la PC del usuario; trabaja con archivos "
                 "disponibles en el directorio del proyecto. Para operar con Power BI, primero lee "
                 "la skill pertinente y despues usa run_pbi_cli. Usa argumentos separados, sin incluir "
-                "la palabra pbi. Pedi un archivo PBIP si el analisis requiere uno y no esta disponible."
+                "la palabra pbi. Pedi un archivo PBIP si el analisis requiere uno y no esta disponible. "
+                "Si el usuario pide un informe ejecutivo, KPI o HTML, recordale que puede generarlo "
+                "desde Configurar > Exportar informe KPI HTML con el PBIP activo."
             )
+            config = load_config()
+            configured_pbip = config.get("pbip_project_path")
+            if configured_pbip:
+                complete, issues = validate_pbip_project(configured_pbip)
+                if complete:
+                    system_prompt += (
+                        f"\n\nPROYECTO PBIP ACTIVO: {configured_pbip}\n"
+                        f"Directorio del proyecto: {Path(configured_pbip).parent}\n"
+                        "Este archivo ya fue seleccionado por el usuario. No vuelvas a pedir su nombre o ruta. "
+                        "Usalo directamente en las herramientas y explica que el modo es offline."
+                    )
+                else:
+                    system_prompt += "\n\nNo hay un proyecto PBIP completo disponible: " + "; ".join(issues)
             tools = [
                 {
                     "name": "read_powerbi_skill",
@@ -1083,7 +1142,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             }, status=400)
 
     def _handle_upload_pbip(self):
-        """Handle .pbip file upload via multipart/form-data."""
+        """Upload a complete PBIP project ZIP (or validate a standalone PBIP)."""
         content_type = self.headers.get('Content-Type', '')
         if 'multipart/form-data' not in content_type:
             self._json_response({"error": "Content-Type debe ser multipart/form-data"}, status=400)
@@ -1101,8 +1160,14 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response({"error": "No se encontro boundary en Content-Type"}, status=400)
             return
 
-        # Read raw body
+        # Read raw body with a configurable limit because multipart parsing is in-memory.
         length = int(self.headers.get('Content-Length', 0))
+        max_upload_bytes = int(os.environ.get("MAX_PBIP_UPLOAD_MB", "500")) * 1024 * 1024
+        if length <= 0 or length > max_upload_bytes:
+            self._json_response({
+                "error": f"El archivo supera el limite de {max_upload_bytes // (1024 * 1024)} MB"
+            }, status=413)
+            return
         body = self.rfile.read(length)
 
         # Parse multipart to find file
@@ -1137,39 +1202,159 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response({"error": "No se encontro archivo en el upload"}, status=400)
             return
 
-        # Validate extension
-        if not filename.lower().endswith('.pbip'):
-            self._json_response({"error": f"Solo se aceptan archivos .pbip (recibido: {filename})"}, status=400)
+        filename = Path(filename).name
+        lower_filename = filename.lower()
+        if not (lower_filename.endswith('.zip') or lower_filename.endswith('.pbip')):
+            self._json_response({
+                "error": f"Subi un ZIP del proyecto PBIP completo (recibido: {filename})"
+            }, status=400)
             return
 
-        # Save to uploads directory
-        uploads_dir = os.path.join(BASE_DIR, "uploads")
-        os.makedirs(uploads_dir, exist_ok=True)
+        uploads_dir = Path(BASE_DIR) / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        safe_stem = "".join(c if c.isalnum() or c in "-_" else "_" for c in Path(filename).stem)[:80]
+        package_dir = uploads_dir / f"{safe_stem}-{uuid.uuid4().hex[:8]}"
 
-        # Clean previous uploads
-        for old_file in os.listdir(uploads_dir):
+        try:
+            if lower_filename.endswith('.zip'):
+                with zipfile.ZipFile(io.BytesIO(file_data)) as archive:
+                    members = archive.infolist()
+                    if len(members) > 20000:
+                        raise ValueError("El ZIP contiene demasiados archivos.")
+                    total_size = sum(member.file_size for member in members)
+                    if total_size > 2 * 1024 * 1024 * 1024:
+                        raise ValueError("El contenido descomprimido supera 2 GB.")
+                    package_dir.mkdir(parents=True, exist_ok=False)
+                    package_root = package_dir.resolve()
+                    for member in members:
+                        member_mode = member.external_attr >> 16
+                        if stat.S_ISLNK(member_mode):
+                            raise ValueError("El ZIP contiene enlaces simbolicos no permitidos.")
+                        target = (package_dir / member.filename).resolve()
+                        if target != package_root and package_root not in target.parents:
+                            raise ValueError("El ZIP contiene una ruta no permitida.")
+                        if member.is_dir():
+                            target.mkdir(parents=True, exist_ok=True)
+                        else:
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            with archive.open(member) as source, open(target, "wb") as destination:
+                                shutil.copyfileobj(source, destination)
+                pbip_files = sorted(
+                    (p for p in package_dir.rglob("*") if p.is_file() and p.suffix.lower() == ".pbip"),
+                    key=lambda p: len(p.parts),
+                )
+                if len(pbip_files) != 1:
+                    raise ValueError(
+                        f"El ZIP debe contener exactamente un archivo .pbip (encontrados: {len(pbip_files)})."
+                    )
+                pbip_path = pbip_files[0]
+            else:
+                package_dir.mkdir(parents=True, exist_ok=False)
+                pbip_path = package_dir / filename
+                pbip_path.write_bytes(file_data)
+
+            complete, issues = validate_pbip_project(pbip_path)
+            if not complete:
+                raise ValueError(
+                    "Proyecto PBIP incompleto. Subi un ZIP que incluya el .pbip y sus carpetas .Report/"
+                    ".SemanticModel. " + " ".join(issues)
+                )
+        except (zipfile.BadZipFile, ValueError, OSError) as e:
+            # package_dir is always a newly-created UUID child of uploads_dir.
+            # Remove an invalid/partial upload without touching existing projects.
             try:
-                os.remove(os.path.join(uploads_dir, old_file))
+                uploads_root = uploads_dir.resolve()
+                failed_package = package_dir.resolve()
+                if uploads_root in failed_package.parents and failed_package.exists():
+                    shutil.rmtree(failed_package)
             except OSError:
                 pass
-
-        # Save file
-        file_path = os.path.join(uploads_dir, filename)
-        with open(file_path, 'wb') as f:
-            f.write(file_data)
+            self._json_response({"error": str(e)}, status=400)
+            return
 
         # Update config
         config = load_config()
-        config["pbip_project_path"] = file_path
+        config["pbip_project_path"] = str(pbip_path)
         if save_config(config):
             chat_logger.log_event('pbip_uploaded', {'filename': filename, 'size': len(file_data)})
             self._json_response({
                 "success": True,
-                "message": f"Archivo subido: {filename}",
-                "path": file_path,
+                "message": f"Proyecto PBIP listo: {pbip_path.stem}",
+                "path": str(pbip_path),
             })
         else:
             self._json_response({"error": "No se pudo guardar la configuracion"}, status=500)
+
+    def _handle_export_business_report(self):
+        """Generate and download a self-contained KPI report from PBIP metadata."""
+        if not FOUNDRY_AVAILABLE:
+            self._json_response({"error": "Microsoft Foundry no esta configurado"}, status=503)
+            return
+
+        body = self._read_body()
+        objective = str(body.get("objective", "")).strip()[:1000]
+        configured_pbip = load_config().get("pbip_project_path")
+        complete, issues = validate_pbip_project(configured_pbip) if configured_pbip else (False, [])
+        if not complete:
+            detail = " ".join(issues) if issues else "No hay un proyecto PBIP activo."
+            self._json_response({
+                "error": "Primero subi el ZIP completo del proyecto PBIP. " + detail
+            }, status=400)
+            return
+
+        try:
+            context, file_count = collect_pbip_context(configured_pbip)
+            if not context.strip():
+                self._json_response({"error": "El PBIP no contiene metadatos de texto analizables."}, status=400)
+                return
+
+            pbip_path = Path(configured_pbip)
+            prompt = build_business_prompt(pbip_path.stem, objective, context)
+            client = AnthropicFoundry(
+                api_key=os.environ["ANTHROPIC_FOUNDRY_API_KEY"],
+                base_url=os.environ["ANTHROPIC_FOUNDRY_BASE_URL"],
+            )
+            model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL")
+            response = client.messages.create(
+                model=model,
+                max_tokens=8000,
+                temperature=0.2,
+                system=(
+                    "Sos un analista senior de Power BI y performance de negocio. "
+                    "Tu salida debe ser JSON valido y no debe inventar resultados numericos."
+                ),
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw_text = "".join(
+                getattr(block, "text", "")
+                for block in response.content
+                if getattr(block, "type", "") == "text"
+            )
+            analysis = parse_business_analysis(raw_text)
+            report_html = render_business_html(
+                analysis,
+                project_name=pbip_path.stem,
+                objective=objective,
+                logo_path=Path(BASE_DIR) / "logo_ypf.png",
+            ).encode("utf-8")
+            safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in pbip_path.stem)[:80]
+            filename = f"Informe_KPI_{safe_name}.html"
+            chat_logger.log_event("business_report_exported", {
+                "project": pbip_path.stem,
+                "metadata_files": file_count,
+                "kpis": len(analysis.get("kpis", [])),
+            })
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", str(len(report_html)))
+            self.end_headers()
+            self.wfile.write(report_html)
+        except (ValueError, json.JSONDecodeError) as e:
+            self._json_response({"error": str(e)}, status=502)
+        except Exception as e:
+            print(f"[BUSINESS REPORT] error: {e}")
+            self._json_response({"error": f"No se pudo generar el informe: {e}"}, status=500)
 
     def _handle_switch_connection(self):
         """Switch active Power BI connection by port."""
