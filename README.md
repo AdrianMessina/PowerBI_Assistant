@@ -37,8 +37,19 @@ CLAUDE_CLI_PATH=/ruta/al/binario/claude
 ```
 
 Las credenciales del LLM deben configurarse como secretos o variables del
-proyecto en Cloudera. Nunca deben agregarse al repositorio. El runtime también
-debe tener instalados Claude CLI y `pbi-cli`.
+proyecto en Cloudera. Nunca deben agregarse al repositorio. `pbi-cli` y sus
+skills se instalan desde `requirements.txt`; Claude CLI debe estar disponible
+en el runtime.
+
+Para Microsoft Foundry, la aplicación hereda estas variables:
+
+```text
+CLAUDE_CODE_USE_FOUNDRY=1
+ANTHROPIC_FOUNDRY_BASE_URL=https://<resource>.services.ai.azure.com/anthropic
+ANTHROPIC_FOUNDRY_API_KEY=<secret>
+ANTHROPIC_MODEL=<deployment-name>
+ANTHROPIC_DEFAULT_SONNET_MODEL=<deployment-name>
+```
 
 Más información en [README_CLOUDERA.md](README_CLOUDERA.md).
 

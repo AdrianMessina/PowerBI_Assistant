@@ -30,6 +30,9 @@ colorama>=0.4.6
 # --- Configuration ---
 python-dotenv>=1.0.0
 
+# --- Power BI CLI + bundled Claude skills ---
+pbi-cli-tool>=3.11.1
+
 # ============================================================
 # CLOUD DEPLOYMENT (Cloudera AI Workbench)
 # ============================================================

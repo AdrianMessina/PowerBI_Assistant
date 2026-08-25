@@ -86,15 +86,38 @@ which claude
 **B) Instalar Claude CLI en el proyecto:**
 ```bash
 # En una sesión de Workbench
-npm install -g @anthropic/claude-cli
+npm install -g @anthropic-ai/claude-code
 # O descargar el binario pre-compilado
+```
+
+### 4. Configurar Microsoft Foundry
+
+La aplicación no necesita un login interactivo si el proyecto recibe las
+credenciales mediante el almacén de secretos de Cloudera. Configurar:
+
+```text
+CLAUDE_CODE_USE_FOUNDRY=1
+ANTHROPIC_FOUNDRY_BASE_URL=https://<resource>.services.ai.azure.com/anthropic
+ANTHROPIC_FOUNDRY_API_KEY=<secret>
+ANTHROPIC_MODEL=<deployment-name>
+ANTHROPIC_DEFAULT_SONNET_MODEL=<deployment-name>
+```
+
+`ANTHROPIC_FOUNDRY_API_KEY` debe marcarse como secreto. No copiar archivos de
+credenciales desde Windows ni publicar sus valores en GitHub.
+
+Verificar desde una sesión de Workbench:
+
+```bash
+claude auth status
+claude --print --output-format stream-json "Responde solamente OK"
 ```
 
 **C) Configurar ruta personalizada:**
 
-Editar `server.py` línea ~58:
-```python
-CLAUDE_PATH = "/ruta/personalizada/claude"
+Agregar una variable de entorno al proyecto:
+```text
+CLAUDE_CLI_PATH=/ruta/personalizada/claude
 ```
 
 ## 🎯 Lanzar la Aplicación
@@ -161,7 +184,7 @@ web/
 2. **Si no está instalado:**
    ```bash
    # Opción A: npm
-   npm install -g @anthropic/claude-cli
+   npm install -g @anthropic-ai/claude-code
    
    # Opción B: Descargar binario
    # Contactar al equipo de Data Analytics
