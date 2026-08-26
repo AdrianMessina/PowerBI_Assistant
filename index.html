@@ -236,10 +236,15 @@
             overflow: hidden;
             max-height: 0;
             transition: max-height 0.35s var(--ease);
+            flex-shrink: 0;
         }
         .setup-banner.visible {
-            max-height: 800px;
+            max-height: 62vh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
         }
+        .setup-banner::-webkit-scrollbar { width: 6px; }
+        .setup-banner::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
         .setup-inner {
             max-width: 1200px;
             margin: 0 auto;
@@ -406,9 +411,37 @@
             opacity: 0;
         }
         .setup-expanded-panel.active {
-            max-height: 600px;
+            max-height: 52vh;
             opacity: 1;
             padding-top: 8px;
+        }
+        #metricsPanel.active {
+            overflow-y: auto;
+            padding-right: 6px;
+            padding-bottom: 10px;
+        }
+        #metricsPanel::-webkit-scrollbar { width: 5px; }
+        #metricsPanel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .setup-tabs {
+            display: none;
+            gap: 6px;
+            padding: 4px 0 2px;
+            border-top: 1px solid rgba(242, 200, 17, 0.12);
+        }
+        .setup-tabs.visible { display: flex; }
+        .setup-tab-btn {
+            padding: 5px 11px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: transparent;
+            color: var(--text-muted);
+            font: 600 10px var(--font-body);
+            cursor: pointer;
+        }
+        .setup-tab-btn.active {
+            color: var(--bg-base);
+            background: var(--accent);
+            border-color: var(--accent);
         }
         .setup-config-row {
             display: flex;
@@ -1108,6 +1141,13 @@
                 <button class="setup-close" onclick="toggleSetupBanner()" aria-label="Cerrar">&times;</button>
             </div>
 
+            <div class="setup-tabs" id="setupTabs">
+                <button class="setup-tab-btn active" id="setupConfigTab"
+                        onclick="showSetupSection('config')">⚙️ Configuración</button>
+                <button class="setup-tab-btn" id="setupMetricsTab"
+                        onclick="showSetupSection('metrics')">📊 Métricas de uso</button>
+            </div>
+
             <!-- Expandable config panel -->
             <div class="setup-expanded-panel" id="configPanel">
                 <!-- Option 1: File upload -->
@@ -1181,7 +1221,7 @@
                 </div>
 
                 <div style="margin-bottom:10px;max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:6px;">
-                    <table style="width:100%;font-size:9px;border-collapse:collapse;color:var(--text-secondary);">
+                    <table style="width:100%;min-width:760px;font-size:9px;border-collapse:collapse;color:var(--text-secondary);">
                         <thead><tr style="background:var(--bg-elevated);position:sticky;top:0;">
                             <th style="padding:5px;text-align:left;">PBIP</th><th>Conversaciones</th>
                             <th>Mensajes</th><th>Tokens usados</th><th>Tokens contexto estimados</th>
@@ -1616,18 +1656,32 @@
             if (menu && !menu.contains(event.target)) closeExportMenu();
         });
 
+        function showSetupSection(section) {
+            const configPanel = document.getElementById('configPanel');
+            const metricsPanel = document.getElementById('metricsPanel');
+            const configTab = document.getElementById('setupConfigTab');
+            const metricsTab = document.getElementById('setupMetricsTab');
+            const showMetrics = section === 'metrics';
+            configPanel.classList.toggle('active', !showMetrics);
+            metricsPanel.classList.toggle('active', showMetrics);
+            configTab.classList.toggle('active', !showMetrics);
+            metricsTab.classList.toggle('active', showMetrics);
+            if (showMetrics) loadMetrics();
+        }
+
         function toggleConfigPanel() {
             const panel = document.getElementById('configPanel');
             const metricsPanel = document.getElementById('metricsPanel');
+            const tabs = document.getElementById('setupTabs');
             const toggle = document.getElementById('configToggle');
-            if (panel.classList.contains('active')) {
+            if (tabs.classList.contains('visible')) {
                 panel.classList.remove('active');
                 metricsPanel.classList.remove('active');
-                toggle.textContent = '⚙️ Configurar';
+                tabs.classList.remove('visible');
+                toggle.textContent = '⚙️ Config / Métricas';
             } else {
-                panel.classList.add('active');
-                metricsPanel.classList.add('active');
-                loadMetrics();
+                tabs.classList.add('visible');
+                showSetupSection('config');
                 toggle.textContent = '❌ Cerrar';
             }
         }
