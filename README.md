@@ -81,6 +81,10 @@ metadatos del modelo y genera:
 El informe no inventa resultados: cuando el PBIP aporta estructura pero no los
 datos ejecutados, identifica el valor como `Requiere ejecución sobre datos`.
 
+La opción **Conversación HTML** guarda inmediatamente el diálogo completo sin
+volver a invocar al LLM. Cada respuesta también ofrece **Guardar este
+intercambio** para exportar únicamente la pregunta y su respuesta.
+
 ## Métricas de uso
 
 La aplicación conserva eventos en `logs/usage_YYYYMMDD.jsonl` dentro del

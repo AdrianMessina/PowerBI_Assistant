@@ -1003,6 +1003,10 @@
             </button>
         </div>
         <div class="header-right">
+            <button id="conversationExportBtn" class="back-btn" onclick="exportConversationHtml()"
+                    title="Guardar toda la conversación como HTML interactivo">
+                💾 Conversación HTML
+            </button>
             <button id="businessReportHeaderBtn" class="back-btn" onclick="exportBusinessReport(this)" disabled
                     title="Generar informe ejecutivo interactivo desde el PBIP">
                 📊 Informe KPI HTML
@@ -1791,7 +1795,7 @@
             html = html.replace(/\n\n/g, '<br><br>');
             return html;
         }
-        function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function escapeHtml(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
         /* ═══════════════════════════════════════════
            MESSAGES
@@ -1829,6 +1833,14 @@
             if (role === 'assistant') bb.innerHTML = renderMarkdown(text);
             else bb.textContent = text;
             ct.appendChild(bb); msg.appendChild(av); msg.appendChild(ct);
+            if (role === 'assistant') {
+                const save = document.createElement('button');
+                save.className = 'setup-config-btn';
+                save.style.cssText = 'margin-top:6px;font-size:9px;padding:3px 8px;';
+                save.textContent = '💾 Guardar este intercambio';
+                save.onclick = () => exportConversationHtml(msg);
+                ct.appendChild(save);
+            }
             messagesEl.appendChild(msg);
 
             // No need to track history — Claude CLI handles it via --resume
@@ -1852,6 +1864,60 @@
         }
         function removeTypingIndicator() { const el = document.getElementById('typingMsg'); if(el) el.remove(); }
         function scrollToBottom() { requestAnimationFrame(() => { chatContainer.scrollTop = chatContainer.scrollHeight; }); }
+
+        async function exportConversationHtml(scopeMessage) {
+            let selected;
+            if (scopeMessage) {
+                const previous = scopeMessage.previousElementSibling;
+                selected = [previous && previous.classList.contains('user') ? previous : null, scopeMessage]
+                    .filter(Boolean);
+            } else {
+                selected = Array.from(messagesEl.querySelectorAll('.message'));
+            }
+            const items = selected.map(message => {
+                const bubble = message.querySelector('.message-bubble');
+                return bubble ? {
+                    role: message.classList.contains('user') ? 'user' : 'assistant',
+                    html: bubble.innerHTML,
+                    text: bubble.textContent || '',
+                } : null;
+            }).filter(Boolean);
+            if (!items.length) {
+                alert('Todavía no hay mensajes para exportar.');
+                return;
+            }
+
+            let logoData = '';
+            try {
+                const logoBlob = await fetch('/logo_ypf.png').then(response => response.blob());
+                logoData = await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result || '');
+                    reader.onerror = () => resolve('');
+                    reader.readAsDataURL(logoBlob);
+                });
+            } catch (_) {}
+
+            const project = serverStatus.report_name || 'Power BI';
+            const cards = items.map((item, index) => `
+                <article class="message ${item.role}" data-search="${escapeHtml(item.text.toLowerCase())}">
+                    <div class="who">${item.role === 'user' ? 'Usuario' : 'Power BI Assistant'}</div>
+                    <div class="content">${item.html}</div>
+                </article>`).join('');
+            const exported = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Conversación Power BI - ${escapeHtml(project)}</title>
+<style>:root{--yellow:#f2c811;--bg:#0b0f18;--panel:#182033;--text:#eef2f8;--muted:#9aa6b8;--blue:#087dcc}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 Arial,sans-serif}header{padding:22px 5vw;border-bottom:3px solid var(--yellow);display:flex;gap:18px;align-items:center;background:#111827}header img{width:80px;max-height:52px;object-fit:contain;background:white;border-radius:6px;padding:5px}h1{margin:0;font-size:26px}.meta{color:var(--muted)}main{max-width:1050px;margin:auto;padding:24px}.tools{position:sticky;top:0;padding:12px 0;background:#0b0f18ee;display:flex;gap:8px;z-index:2}.tools input,.tools select,.tools button{padding:9px;border:1px solid #34405a;border-radius:7px;background:#131a29;color:var(--text)}.tools input{flex:1}.message{max-width:85%;padding:16px 18px;margin:14px 0;border-radius:13px;background:var(--panel);border:1px solid #2b3549}.message.user{margin-left:auto;background:#087dcc}.who{font-size:11px;font-weight:bold;color:var(--yellow);margin-bottom:7px}.user .who{color:white}.content pre{white-space:pre-wrap;background:#0d121d;padding:10px;border-radius:7px;overflow:auto}.content table{border-collapse:collapse;width:100%}.content td,.content th{border:1px solid #3a465d;padding:6px}.hidden{display:none}@media print{body{background:white;color:#111}.tools{display:none}.message{break-inside:avoid;background:white;border-color:#bbb}.message.user{background:#e7f3ff}}</style></head>
+<body><header>${logoData ? `<img src="${logoData}" alt="YPF">` : '<strong>YPF</strong>'}<div><h1>Conversación Power BI</h1><div class="meta">${escapeHtml(project)} · ${new Date().toLocaleString('es-AR')}</div></div></header>
+<main><div class="tools"><input id="q" placeholder="Buscar en la conversación..." oninput="filter()"><select id="role" onchange="filter()"><option value="">Todos</option><option value="user">Usuario</option><option value="assistant">Asistente</option></select><button onclick="window.print()">Imprimir / PDF</button><button onclick="copyAll()">Copiar texto</button></div><section id="conversation">${cards}</section></main>
+<script>function filter(){const q=document.getElementById('q').value.toLowerCase(),r=document.getElementById('role').value;document.querySelectorAll('.message').forEach(x=>x.classList.toggle('hidden',(q&&!x.dataset.search.includes(q))||(r&&!x.classList.contains(r))))}function copyAll(){navigator.clipboard.writeText(document.getElementById('conversation').innerText)}<\/script></body></html>`;
+            const blob = new Blob([exported], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Conversacion_PowerBI_${new Date().toISOString().slice(0, 10)}.html`;
+            document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+        }
 
         /* ═══════════════════════════════════════════
            SEND MESSAGE

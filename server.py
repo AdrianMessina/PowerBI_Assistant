@@ -206,6 +206,23 @@ def add_message_usage(accumulator, message):
         )
     )
 
+
+def select_chat_max_tokens(user_message):
+    """Keep normal turns concise, while allowing explicitly requested deep dives."""
+    requested = (user_message or "").lower()
+    exhaustive_markers = (
+        "exhaustivo", "exhaustiva", "completo", "completa", "en detalle",
+        "todos los detalles", "documentación completa", "informe completo",
+    )
+    env_name, default = (
+        ("CHAT_DEEP_MAX_TOKENS", "2600") if any(marker in requested for marker in exhaustive_markers)
+        else ("CHAT_MAX_TOKENS", "1100")
+    )
+    try:
+        return max(400, min(int(os.environ.get(env_name, default)), 4096))
+    except ValueError:
+        return int(default)
+
 print(f"[OK] Proyecto: {PROJECT_DIR}")
 print(f"[OK] Modo: {'CLOUD' if CLOUD_MODE else 'LOCAL'}")
 
@@ -980,6 +997,12 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 "la herramienta directamente y entrega una respuesta consolidada. Si una herramienta "
                 "falla, no pruebes variantes repetitivas; explica la limitacion y continua con la "
                 "evidencia disponible. Pedi un archivo PBIP si el analisis requiere uno y no esta disponible. "
+                "POLITICA DE RESPUESTA PROGRESIVA: en el primer turno responde de forma ejecutiva, con "
+                "un maximo orientativo de 250 palabras y hasta 5 hallazgos priorizados. No intentes resolver "
+                "ni enumerar todo el modelo en una sola respuesta. Para consultas amplias, entrega primero "
+                "un resumen accionable y termina con una sola pregunta para elegir donde profundizar. "
+                "Solo desarrolla una respuesta extensa si el usuario pide explicitamente un analisis completo, "
+                "exhaustivo o todos los detalles. No repitas el plan ni narres tus pasos internos. "
                 "Si el usuario pide un informe ejecutivo, KPI o HTML, recordale que puede generarlo "
                 "desde Configurar > Exportar informe KPI HTML con el PBIP activo."
             )
@@ -1044,13 +1067,14 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             tool_call_counts = {}
             tool_error_count = 0
             token_usage = {}
+            chat_max_tokens = select_chat_max_tokens(user_msg)
             send_event("status", message="Analizando la consulta...")
 
             for _ in range(8):
                 round_parts = []
                 with client.messages.stream(
                     model=model,
-                    max_tokens=4096,
+                    max_tokens=chat_max_tokens,
                     system=system_prompt,
                     messages=messages,
                     tools=tools,
@@ -1120,7 +1144,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                     # Stop an unproductive tool loop and force a useful explanation.
                     final_response = client.messages.create(
                         model=model,
-                        max_tokens=4096,
+                        max_tokens=chat_max_tokens,
                         system=system_prompt,
                         messages=messages,
                         timeout=300,
@@ -1192,7 +1216,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 detail = " ".join(issues) if issues else "No hay un proyecto PBIP activo."
                 return detail, True
             try:
-                inventory = inspect_pbip_project(configured_pbip)
+                inventory = inspect_pbip_project(configured_pbip, max_context_chars=45_000)
                 return json.dumps(inventory, ensure_ascii=False), False
             except OSError as e:
                 return f"No se pudo inspeccionar el PBIP: {e}", True
@@ -1508,7 +1532,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 update_job(status="running", message="Leyendo el modelo y seleccionando metadatos...")
                 context, file_count = collect_pbip_context(
-                    configured_pbip, max_chars=60_000, max_file_chars=8_000
+                    configured_pbip, max_chars=45_000, max_file_chars=6_000
                 )
                 if not context.strip():
                     raise ValueError("El PBIP no contiene metadatos de texto analizables.")
@@ -1522,10 +1546,10 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
                 model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL")
                 response = client.messages.create(
                     model=model,
-                    max_tokens=4500,
+                    max_tokens=3500,
                     system=(
                         "Sos un analista senior de Power BI y performance de negocio. "
-                        "Tu salida debe ser JSON valido y no debe inventar resultados numericos."
+                        "Tu salida debe ser YAML valido y no debe inventar resultados numericos."
                     ),
                     messages=[{"role": "user", "content": prompt}],
                     timeout=180,

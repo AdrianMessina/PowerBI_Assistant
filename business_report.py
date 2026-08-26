@@ -4,6 +4,7 @@ import base64
 import html
 import json
 import re
+import yaml
 from datetime import datetime
 from pathlib import Path
 
@@ -138,50 +139,61 @@ Reglas obligatorias:
 - Proponé DAX válido y útil para el negocio cuando haya campos suficientes. Si no los hay, dejá `dax` vacío y explicá el dato faltante.
 - Los targets deben ser criterios sugeridos, nunca resultados observados, salvo que estén explícitos en el modelo.
 - Redactá en español profesional, claro y accionable.
-- Entregá únicamente JSON válido, sin Markdown ni comentarios.
+- Entregá únicamente YAML válido, sin cercos Markdown ni comentarios.
+- Para cada fórmula DAX usa un bloque YAML literal (`dax: |`) para conservar comillas y saltos de línea.
 
-Esquema JSON requerido:
-{{
-  "report_title": "string",
-  "subtitle": "string",
-  "executive_summary": "string",
-  "kpis": [
-    {{
-      "name": "string",
-      "category": "Comercial|Operaciones|Finanzas|Clientes|Calidad|Otro",
-      "status": "existing|proposed",
-      "value": "string",
-      "format": "string",
-      "business_question": "string",
-      "description": "string",
-      "dax": "string",
-      "target": "string",
-      "source": "tabla/medida/columna usada",
-      "rationale": "string"
-    }}
-  ],
-  "calculations": [
-    {{"name":"string", "status":"existing|proposed", "dax":"string", "explanation":"string"}}
-  ],
-  "insights": ["string"],
-  "recommendations": ["string"],
-  "limitations": ["string"]
-}}
+Esquema YAML requerido:
+report_title: string
+subtitle: string
+executive_summary: string
+kpis:
+  - name: string
+    category: Comercial|Operaciones|Finanzas|Clientes|Calidad|Otro
+    status: existing|proposed
+    value: string
+    format: string
+    business_question: string
+    description: string
+    dax: |
+      fórmula DAX
+    target: string
+    source: tabla/medida/columna usada
+    rationale: string
+calculations:
+  - name: string
+    status: existing|proposed
+    dax: |
+      fórmula DAX
+    explanation: string
+insights:
+  - string
+recommendations:
+  - string
+limitations:
+  - string
 
-Generá entre 5 y 8 KPI relevantes y hasta 6 cálculos. Priorizá calidad y concisión. Metadatos PBIP:
+Generá entre 5 y 7 KPI relevantes y hasta 5 cálculos. Priorizá calidad y concisión. Metadatos PBIP:
 {context}
 """.strip()
 
 
 def parse_business_analysis(raw_text):
-    """Parse a model JSON response, tolerating a fenced response."""
+    """Parse a model YAML/JSON response, tolerating a fenced response."""
     text = (raw_text or "").strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
+    text = re.sub(r"^```(?:json|ya?ml)?\s*", "", text, flags=re.I)
     text = re.sub(r"\s*```$", "", text)
+    data = None
     start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("La IA no devolvió un informe JSON válido.")
-    data = json.loads(text[start:end + 1])
+    if start >= 0 and end > start:
+        try:
+            data = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            data = None
+    if data is None:
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as error:
+            raise ValueError(f"La IA no devolvió un informe YAML válido: {error}") from error
     if not isinstance(data, dict) or not isinstance(data.get("kpis"), list):
         raise ValueError("El informe generado no contiene una lista de KPI válida.")
     data["kpis"] = [item for item in data["kpis"] if isinstance(item, dict)]
