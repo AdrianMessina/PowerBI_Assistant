@@ -168,7 +168,7 @@ Esquema JSON requerido:
   "limitations": ["string"]
 }}
 
-Generá entre 6 y 12 KPI relevantes y hasta 10 cálculos. Metadatos PBIP:
+Generá entre 5 y 8 KPI relevantes y hasta 6 cálculos. Priorizá calidad y concisión. Metadatos PBIP:
 {context}
 """.strip()
 

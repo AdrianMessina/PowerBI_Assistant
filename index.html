@@ -1687,17 +1687,43 @@
             statusEl.textContent = 'Analizando PBIP y generando informe...';
             statusEl.style.color = 'var(--accent)';
             try {
-                const res = await fetch('/api/export-business-report', {
+                const startRes = await fetch('/api/export-business-report', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ objective }),
                 });
-                if (!res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    throw new Error(data.error || `HTTP ${res.status}`);
+                const startData = await startRes.json().catch(() => ({}));
+                if (!startRes.ok || !startData.job_id) {
+                    throw new Error(startData.error || `HTTP ${startRes.status}`);
                 }
-                const blob = await res.blob();
-                const disposition = res.headers.get('Content-Disposition') || '';
+
+                const startedAt = Date.now();
+                let completed = false;
+                for (let attempt = 0; attempt < 160; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    const statusRes = await fetch('/api/business-report-status?id=' + encodeURIComponent(startData.job_id));
+                    const job = await statusRes.json().catch(() => ({}));
+                    if (!statusRes.ok) throw new Error(job.error || `HTTP ${statusRes.status}`);
+                    const elapsed = Math.round((Date.now() - startedAt) / 1000);
+                    statusEl.textContent = (job.message || 'Generando informe...') + ` · ${elapsed}s`;
+                    if (triggerButton) triggerButton.textContent = `Generando... ${elapsed}s`;
+                    if (job.status === 'error') throw new Error(job.error || job.message);
+                    if (job.status === 'done') {
+                        completed = true;
+                        break;
+                    }
+                }
+                if (!completed) throw new Error('La generación superó los 4 minutos.');
+
+                const downloadRes = await fetch(
+                    '/api/business-report-download?id=' + encodeURIComponent(startData.job_id)
+                );
+                if (!downloadRes.ok) {
+                    const data = await downloadRes.json().catch(() => ({}));
+                    throw new Error(data.error || `HTTP ${downloadRes.status}`);
+                }
+                const blob = await downloadRes.blob();
+                const disposition = downloadRes.headers.get('Content-Disposition') || '';
                 const match = disposition.match(/filename="?([^";]+)"?/i);
                 const filename = match ? match[1] : 'Informe_KPI_YPF.html';
                 const url = URL.createObjectURL(blob);

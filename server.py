@@ -19,6 +19,7 @@ import uuid
 import io
 import zipfile
 import stat
+import urllib.parse
 from pathlib import Path
 
 from usage_logger import ChatLogger
@@ -139,6 +140,8 @@ if not CLAUDE_AVAILABLE and not FOUNDRY_AVAILABLE:
 
 FOUNDRY_SESSIONS = {}
 FOUNDRY_SESSIONS_LOCK = threading.Lock()
+BUSINESS_REPORT_JOBS = {}
+BUSINESS_REPORT_JOBS_LOCK = threading.Lock()
 POWER_BI_SKILLS = (
     "power-bi-custom-visuals", "power-bi-dax", "power-bi-deployment",
     "power-bi-diagnostics", "power-bi-docs", "power-bi-filters",
@@ -370,18 +373,25 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404)
 
     def do_GET(self):
-        if self.path == "/" or self.path == "":
+        parsed_path = urllib.parse.urlparse(self.path)
+        if parsed_path.path == "/" or parsed_path.path == "":
             self.path = "/index.html"
-        elif self.path == "/api/status":
+        elif parsed_path.path == "/api/status":
             self._handle_status()
             return
-        elif self.path == "/api/auth":
+        elif parsed_path.path == "/api/auth":
             self._handle_auth()
             return
-        elif self.path == "/api/usage-stats":
+        elif parsed_path.path == "/api/usage-stats":
             self._handle_usage_stats()
             return
-        elif self.path == "/favicon.ico":
+        elif parsed_path.path == "/api/business-report-status":
+            self._handle_business_report_status(parsed_path.query)
+            return
+        elif parsed_path.path == "/api/business-report-download":
+            self._handle_business_report_download(parsed_path.query)
+            return
+        elif parsed_path.path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
             return
@@ -1459,7 +1469,7 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response({"error": "No se pudo guardar la configuracion"}, status=500)
 
     def _handle_export_business_report(self):
-        """Generate and download a self-contained KPI report from PBIP metadata."""
+        """Start an asynchronous KPI report job and return immediately."""
         if not FOUNDRY_AVAILABLE:
             self._json_response({"error": "Microsoft Foundry no esta configurado"}, status=503)
             return
@@ -1475,61 +1485,127 @@ class ChatHandler(http.server.SimpleHTTPRequestHandler):
             }, status=400)
             return
 
-        try:
-            context, file_count = collect_pbip_context(configured_pbip)
-            if not context.strip():
-                self._json_response({"error": "El PBIP no contiene metadatos de texto analizables."}, status=400)
-                return
+        job_id = uuid.uuid4().hex
+        username = self._request_username()
+        now = time.time()
+        with BUSINESS_REPORT_JOBS_LOCK:
+            # Bound memory: completed jobs expire after one hour.
+            expired = [key for key, value in BUSINESS_REPORT_JOBS.items()
+                       if now - value.get("created_at", now) > 3600]
+            for key in expired:
+                BUSINESS_REPORT_JOBS.pop(key, None)
+            BUSINESS_REPORT_JOBS[job_id] = {
+                "status": "queued", "message": "Preparando metadatos PBIP...",
+                "created_at": now, "username": username,
+            }
 
-            pbip_path = Path(configured_pbip)
-            prompt = build_business_prompt(pbip_path.stem, objective, context)
-            client = AnthropicFoundry(
-                api_key=os.environ["ANTHROPIC_FOUNDRY_API_KEY"],
-                base_url=os.environ["ANTHROPIC_FOUNDRY_BASE_URL"],
-            )
-            model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL")
-            response = client.messages.create(
-                model=model,
-                max_tokens=8000,
-                system=(
-                    "Sos un analista senior de Power BI y performance de negocio. "
-                    "Tu salida debe ser JSON valido y no debe inventar resultados numericos."
-                ),
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw_text = "".join(
-                getattr(block, "text", "")
-                for block in response.content
-                if getattr(block, "type", "") == "text"
-            )
-            analysis = parse_business_analysis(raw_text)
-            export_usage = {}
-            add_message_usage(export_usage, response)
-            report_html = render_business_html(
-                analysis,
-                project_name=pbip_path.stem,
-                objective=objective,
-                logo_path=Path(BASE_DIR) / "logo_ypf.png",
-            ).encode("utf-8")
-            safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in pbip_path.stem)[:80]
-            filename = f"Informe_KPI_{safe_name}.html"
-            chat_logger.log_event("business_report_exported", {
-                "project": pbip_path.stem,
-                "metadata_files": file_count,
-                "kpis": len(analysis.get("kpis", [])),
-                "tokens": export_usage,
-            }, username=self._request_username())
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-            self.send_header("Content-Length", str(len(report_html)))
-            self.end_headers()
-            self.wfile.write(report_html)
-        except (ValueError, json.JSONDecodeError) as e:
-            self._json_response({"error": str(e)}, status=502)
-        except Exception as e:
-            print(f"[BUSINESS REPORT] error: {e}")
-            self._json_response({"error": f"No se pudo generar el informe: {e}"}, status=500)
+        def update_job(**values):
+            with BUSINESS_REPORT_JOBS_LOCK:
+                if job_id in BUSINESS_REPORT_JOBS:
+                    BUSINESS_REPORT_JOBS[job_id].update(values)
+
+        def generate_job():
+            try:
+                update_job(status="running", message="Leyendo el modelo y seleccionando metadatos...")
+                context, file_count = collect_pbip_context(
+                    configured_pbip, max_chars=60_000, max_file_chars=8_000
+                )
+                if not context.strip():
+                    raise ValueError("El PBIP no contiene metadatos de texto analizables.")
+                pbip_path = Path(configured_pbip)
+                prompt = build_business_prompt(pbip_path.stem, objective, context)
+                update_job(message="Foundry está generando KPI y cálculos DAX...")
+                client = AnthropicFoundry(
+                    api_key=os.environ["ANTHROPIC_FOUNDRY_API_KEY"],
+                    base_url=os.environ["ANTHROPIC_FOUNDRY_BASE_URL"],
+                )
+                model = os.environ.get("ANTHROPIC_MODEL") or os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL")
+                response = client.messages.create(
+                    model=model,
+                    max_tokens=4500,
+                    system=(
+                        "Sos un analista senior de Power BI y performance de negocio. "
+                        "Tu salida debe ser JSON valido y no debe inventar resultados numericos."
+                    ),
+                    messages=[{"role": "user", "content": prompt}],
+                    timeout=180,
+                )
+                raw_text = "".join(
+                    getattr(block, "text", "") for block in response.content
+                    if getattr(block, "type", "") == "text"
+                )
+                update_job(message="Construyendo el HTML interactivo con identidad YPF...")
+                analysis = parse_business_analysis(raw_text)
+                export_usage = {}
+                add_message_usage(export_usage, response)
+                report_html = render_business_html(
+                    analysis, project_name=pbip_path.stem, objective=objective,
+                    logo_path=Path(BASE_DIR) / "logo_ypf.png",
+                ).encode("utf-8")
+                safe_name = "".join(
+                    c if c.isalnum() or c in "-_" else "_" for c in pbip_path.stem
+                )[:80]
+                filename = f"Informe_KPI_{safe_name}.html"
+                chat_logger.log_event("business_report_exported", {
+                    "project": pbip_path.stem, "metadata_files": file_count,
+                    "kpis": len(analysis.get("kpis", [])), "tokens": export_usage,
+                }, username=username)
+                update_job(
+                    status="done", message="Informe listo para descargar.",
+                    html=report_html, filename=filename,
+                )
+            except Exception as e:
+                print(f"[BUSINESS REPORT] job={job_id} error: {e}")
+                update_job(status="error", message="No se pudo generar el informe.", error=str(e))
+
+        threading.Thread(target=generate_job, daemon=True).start()
+        self._json_response({"success": True, "job_id": job_id}, status=202)
+
+    def _handle_business_report_status(self, query):
+        job_id = urllib.parse.parse_qs(query).get("id", [""])[0]
+        with BUSINESS_REPORT_JOBS_LOCK:
+            job = BUSINESS_REPORT_JOBS.get(job_id)
+            if job:
+                payload = {key: value for key, value in job.items() if key != "html"}
+            else:
+                payload = None
+        if not payload:
+            self._json_response({"error": "Trabajo no encontrado o vencido"}, status=404)
+            return
+        if payload.get("username") != self._request_username():
+            self._json_response({"error": "No autorizado"}, status=403)
+            return
+        payload.pop("username", None)
+        payload.pop("created_at", None)
+        self._json_response(payload)
+
+    def _handle_business_report_download(self, query):
+        job_id = urllib.parse.parse_qs(query).get("id", [""])[0]
+        with BUSINESS_REPORT_JOBS_LOCK:
+            job = BUSINESS_REPORT_JOBS.get(job_id)
+            if job:
+                status = job.get("status")
+                username = job.get("username")
+                report_html = job.get("html")
+                filename = job.get("filename", "Informe_KPI_YPF.html")
+            else:
+                status = username = report_html = None
+                filename = "Informe_KPI_YPF.html"
+        if not job:
+            self._json_response({"error": "Trabajo no encontrado o vencido"}, status=404)
+            return
+        if username != self._request_username():
+            self._json_response({"error": "No autorizado"}, status=403)
+            return
+        if status != "done" or not report_html:
+            self._json_response({"error": "El informe todavía no está listo"}, status=409)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(report_html)))
+        self.end_headers()
+        self.wfile.write(report_html)
 
     def _handle_switch_connection(self):
         """Switch active Power BI connection by port."""
