@@ -133,6 +133,42 @@
             align-items: center;
             gap: 12px;
         }
+        .export-menu { position: relative; }
+        .export-menu-trigger { margin-left: 0; }
+        .export-menu-panel {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 9px);
+            width: 330px;
+            padding: 7px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 16px 45px rgba(0,0,0,.45);
+            z-index: 100;
+        }
+        .export-menu.open .export-menu-panel { display: block; }
+        .export-option {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 32px 1fr auto;
+            gap: 9px;
+            align-items: center;
+            padding: 10px;
+            color: var(--text-primary);
+            background: transparent;
+            border: 0;
+            border-radius: 8px;
+            text-align: left;
+            cursor: pointer;
+        }
+        .export-option:hover { background: var(--bg-hover); }
+        .export-option:disabled { opacity: .45; cursor: not-allowed; }
+        .export-option-icon { font-size: 20px; text-align: center; }
+        .export-option strong { display: block; font-size: 12px; }
+        .export-option small { display: block; margin-top: 2px; color: var(--text-muted); font-size: 9px; line-height: 1.35; }
+        .export-option-badge { color: var(--accent); font-size: 9px; white-space: nowrap; }
         .tone-selector {
             display: flex;
             gap: 2px;
@@ -1003,14 +1039,25 @@
             </button>
         </div>
         <div class="header-right">
-            <button id="conversationExportBtn" class="back-btn" onclick="exportConversationHtml()"
-                    title="Guardar toda la conversación como HTML interactivo">
-                💾 Conversación HTML
-            </button>
-            <button id="businessReportHeaderBtn" class="back-btn" onclick="exportBusinessReport(this)" disabled
-                    title="Generar informe ejecutivo interactivo desde el PBIP">
-                📊 Informe KPI HTML
-            </button>
+            <div class="export-menu" id="exportMenu">
+                <button class="back-btn export-menu-trigger" onclick="toggleExportMenu(event)"
+                        title="Guardar el chat o crear un informe nuevo">
+                    Exportar ▾
+                </button>
+                <div class="export-menu-panel">
+                    <button class="export-option" onclick="closeExportMenu(); exportConversationHtml()">
+                        <span class="export-option-icon">💾</span>
+                        <span><strong>Guardar conversación</strong><small>Copia exactamente el chat actual en HTML.</small></span>
+                        <span class="export-option-badge">Instantáneo</span>
+                    </button>
+                    <button id="businessReportHeaderBtn" class="export-option"
+                            onclick="closeExportMenu(); exportBusinessReport(this)" disabled>
+                        <span class="export-option-icon">✨</span>
+                        <span><strong>Crear informe desde PBIP</strong><small>Genera nuevos KPI, DAX y recomendaciones con IA.</small></span>
+                        <span class="export-option-badge">IA · 30–60 s</span>
+                    </button>
+                </div>
+            </div>
             <div class="tone-selector">
                 <button class="tone-btn active" data-tone="porteno" onclick="setTone('porteno',this)">Porteno</button>
                 <button class="tone-btn" data-tone="formal" onclick="setTone('formal',this)">Formal</button>
@@ -1091,7 +1138,7 @@
                            placeholder="Objetivo de negocio: ventas, margen, operación, clientes..." />
                     <button id="exportBusinessBtn" onclick="exportBusinessReport(this)" class="setup-config-btn"
                             style="background: var(--accent); color: #111; font-weight: 700;">
-                        Exportar informe KPI HTML
+                        Crear informe con IA
                     </button>
                     <span id="businessReportStatus" style="font-size: 9px; color: var(--text-muted);"></span>
                 </div>
@@ -1556,6 +1603,19 @@
         /* ═══════════════════════════════════════════
            CONFIG PANEL TOGGLE
            ═══════════════════════════════════════════ */
+        function toggleExportMenu(event) {
+            event.stopPropagation();
+            document.getElementById('exportMenu').classList.toggle('open');
+        }
+        function closeExportMenu() {
+            const menu = document.getElementById('exportMenu');
+            if (menu) menu.classList.remove('open');
+        }
+        document.addEventListener('click', event => {
+            const menu = document.getElementById('exportMenu');
+            if (menu && !menu.contains(event.target)) closeExportMenu();
+        });
+
         function toggleConfigPanel() {
             const panel = document.getElementById('configPanel');
             const metricsPanel = document.getElementById('metricsPanel');
@@ -1686,8 +1746,12 @@
             const statusEl = document.getElementById('businessReportStatus');
             const objective = document.getElementById('businessObjectiveInput').value.trim();
             buttons.forEach(button => button.disabled = true);
-            const originalText = triggerButton ? triggerButton.textContent : '';
-            if (triggerButton) triggerButton.textContent = 'Generando informe...';
+            const menuTrigger = document.querySelector('.export-menu-trigger');
+            const originalMenuText = menuTrigger ? menuTrigger.textContent : 'Exportar ▾';
+            const configButton = document.getElementById('exportBusinessBtn');
+            const originalConfigText = configButton ? configButton.textContent : '';
+            if (menuTrigger) menuTrigger.textContent = 'Generando informe...';
+            if (configButton) configButton.textContent = 'Generando informe...';
             statusEl.textContent = 'Analizando PBIP y generando informe...';
             statusEl.style.color = 'var(--accent)';
             try {
@@ -1710,7 +1774,8 @@
                     if (!statusRes.ok) throw new Error(job.error || `HTTP ${statusRes.status}`);
                     const elapsed = Math.round((Date.now() - startedAt) / 1000);
                     statusEl.textContent = (job.message || 'Generando informe...') + ` · ${elapsed}s`;
-                    if (triggerButton) triggerButton.textContent = `Generando... ${elapsed}s`;
+                    if (menuTrigger) menuTrigger.textContent = `Generando... ${elapsed}s`;
+                    if (configButton) configButton.textContent = `Generando... ${elapsed}s`;
                     if (job.status === 'error') throw new Error(job.error || job.message);
                     if (job.status === 'done') {
                         completed = true;
@@ -1746,7 +1811,8 @@
                 alert('No se pudo generar el informe: ' + err.message);
             } finally {
                 buttons.forEach(button => button.disabled = !serverStatus.report_found);
-                if (triggerButton) triggerButton.textContent = originalText;
+                if (menuTrigger) menuTrigger.textContent = originalMenuText;
+                if (configButton) configButton.textContent = originalConfigText;
             }
         }
 
@@ -1837,7 +1903,7 @@
                 const save = document.createElement('button');
                 save.className = 'setup-config-btn';
                 save.style.cssText = 'margin-top:6px;font-size:9px;padding:3px 8px;';
-                save.textContent = '💾 Guardar este intercambio';
+                save.textContent = '💾 Guardar pregunta + respuesta';
                 save.onclick = () => exportConversationHtml(msg);
                 ct.appendChild(save);
             }

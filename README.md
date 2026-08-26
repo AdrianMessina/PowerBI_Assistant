@@ -81,9 +81,10 @@ metadatos del modelo y genera:
 El informe no inventa resultados: cuando el PBIP aporta estructura pero no los
 datos ejecutados, identifica el valor como `Requiere ejecución sobre datos`.
 
-La opción **Conversación HTML** guarda inmediatamente el diálogo completo sin
-volver a invocar al LLM. Cada respuesta también ofrece **Guardar este
-intercambio** para exportar únicamente la pregunta y su respuesta.
+El menú **Exportar** diferencia dos acciones: **Guardar conversación** conserva
+el diálogo actual inmediatamente y sin invocar al LLM; **Crear informe desde
+PBIP** genera contenido analítico nuevo con IA. Cada respuesta también ofrece
+**Guardar pregunta + respuesta** para conservar solamente ese intercambio.
 
 ## Métricas de uso
 
