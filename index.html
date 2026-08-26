@@ -822,6 +822,7 @@
         }
         .cat-tab .req-dot.needs-pbi { background: var(--blue); }
         .cat-tab .req-dot.offline { background: var(--green); }
+        .cat-tab .req-dot.partial { background: var(--orange); }
 
         .cat-tab[data-cat="analisis"]       { --cat-color: var(--cat-analisis); --cat-bg: var(--cat-analisis-dim); }
         .cat-tab[data-cat="modelado"]        { --cat-color: var(--cat-modelado); --cat-bg: var(--cat-modelado-dim); }
@@ -919,6 +920,53 @@
             line-height: 1.4;
         }
         .feature-card-prompt { display: none; }
+        .feature-card::after {
+            display: inline-flex;
+            margin-top: 10px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: .02em;
+        }
+        .feature-card[data-capability="offline"]::after {
+            content: 'DISPONIBLE CON PBIP';
+            color: var(--green);
+            background: var(--green-dim);
+        }
+        .feature-card[data-capability="partial"]::after {
+            content: 'ANALISIS / PROPUESTA';
+            color: var(--orange);
+            background: var(--orange-dim);
+        }
+        .feature-card[data-capability="live"]::after {
+            content: 'REQUIERE MOTOR CON DATOS';
+            color: var(--red);
+            background: rgba(248, 113, 113, .12);
+        }
+        .feature-card.blocked {
+            opacity: .58;
+            cursor: not-allowed;
+        }
+        .feature-card.blocked:hover {
+            transform: none;
+            border-color: var(--border);
+            background: var(--bg-elevated);
+        }
+        .capability-legend {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: -3px 0 13px;
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+        .capability-legend span { display: inline-flex; align-items: center; gap: 5px; }
+        .capability-legend i { width: 7px; height: 7px; border-radius: 50%; }
+        .capability-legend .available i { background: var(--green); }
+        .capability-legend .partial i { background: var(--orange); }
+        .capability-legend .live i { background: var(--red); }
 
         .cat-panel[data-cat="analisis"] .feature-card       { --card-accent: var(--cat-analisis); }
         .cat-panel[data-cat="modelado"] .feature-card        { --card-accent: var(--cat-modelado); }
@@ -1311,12 +1359,12 @@
                     <button class="cat-tab active" data-cat="analisis" onclick="switchCategory('analisis',this)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                         <span>Analisis</span>
-                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                        <span class="req-dot partial" title="Capacidades mixtas"></span>
                     </button>
                     <button class="cat-tab" data-cat="modelado" onclick="switchCategory('modelado',this)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                         <span>Modelado</span>
-                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                        <span class="req-dot partial" title="Analisis disponible; cambios solo como propuesta"></span>
                     </button>
                     <button class="cat-tab" data-cat="diseno" onclick="switchCategory('diseno',this)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
@@ -1326,13 +1374,19 @@
                     <button class="cat-tab" data-cat="performance" onclick="switchCategory('performance',this)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                         <span>Performance</span>
-                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                        <span class="req-dot partial" title="Diagnostico estatico disponible; mediciones requieren motor"></span>
                     </button>
                     <button class="cat-tab" data-cat="documentacion" onclick="switchCategory('documentacion',this)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                         <span>Deploy y Docs</span>
-                        <span class="req-dot needs-pbi" title="Requiere PBI Desktop"></span>
+                        <span class="req-dot partial" title="Documentacion disponible; deploy es parcial"></span>
                     </button>
+                </div>
+
+                <div class="capability-legend" aria-label="Disponibilidad de funciones">
+                    <span class="available"><i></i>Disponible con PBIP</span>
+                    <span class="partial"><i></i>Analisis o propuesta</span>
+                    <span class="live"><i></i>Requiere motor con datos</span>
                 </div>
 
                 <!-- ═══ PANELS ═══ -->
@@ -1343,28 +1397,28 @@
                         <div class="cat-panel-header">
                             <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
                             <h3>Analisis de Datos</h3>
-                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                            <span class="panel-req mixed">Mixto: metadatos si · datos no</span>
                         </div>
                         <div class="feature-grid">
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="live" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Top productos por ventas <span class="cmd-badge">dax execute</span></div>
-                                <div class="feature-card-desc">Ejecuta una query DAX para ver los productos con mas ingresos.</div>
+                                <div class="feature-card-desc">Necesita consultar las filas del modelo en un motor semantico.</div>
                                 <div class="feature-card-prompt">Mostrame los top 10 productos por ventas del modelo conectado</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="live" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Conteo de filas por tabla <span class="cmd-badge">dax execute</span></div>
-                                <div class="feature-card-desc">Obtiene la cantidad de registros en cada tabla del modelo.</div>
+                                <div class="feature-card-desc">El numero real de registros requiere acceso a los datos cargados.</div>
                                 <div class="feature-card-prompt">Cuantas filas tiene cada tabla del modelo? Mostralo ordenado de mayor a menor</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="live" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Resumen agrupado <span class="cmd-badge">SUMMARIZECOLUMNS</span></div>
-                                <div class="feature-card-desc">Agrupaciones con totales, promedios y conteos por dimension.</div>
+                                <div class="feature-card-desc">Totales, promedios y conteos necesitan ejecutar DAX sobre datos.</div>
                                 <div class="feature-card-prompt">Hace un resumen de ventas agrupado por categoria de producto con total, promedio y conteo</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Explorar estructura <span class="cmd-badge">INFO.TABLES</span></div>
-                                <div class="feature-card-desc">Lista todas las tablas, columnas y medidas del modelo conectado.</div>
-                                <div class="feature-card-prompt">Explorame la estructura completa del modelo: tablas, columnas y medidas</div>
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Explorar estructura <span class="cmd-badge">PBIP / TMDL</span></div>
+                                <div class="feature-card-desc">Lee tablas, columnas, medidas y relaciones directamente del PBIP.</div>
+                                <div class="feature-card-prompt">Explora offline la estructura completa del PBIP: tablas, columnas, medidas y relaciones</div>
                             </div>
                         </div>
                     </div>
@@ -1374,28 +1428,28 @@
                         <div class="cat-panel-header">
                             <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
                             <h3>Modelado Semantico</h3>
-                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                            <span class="panel-req mixed">Auditoria disponible · cambios propuestos</span>
                         </div>
                         <div class="feature-grid">
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Crear medida DAX <span class="cmd-badge">measure create</span></div>
-                                <div class="feature-card-desc">Crea medidas con formulas DAX: sumas, promedios, time intelligence.</div>
-                                <div class="feature-card-prompt">Creame una medida de ventas acumuladas year-to-date usando TOTALYTD</div>
+                            <div class="feature-card" data-capability="partial" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Disenar medida DAX <span class="cmd-badge">propuesta</span></div>
+                                <div class="feature-card-desc">Genera la formula y explica donde incorporarla; no la publica automaticamente.</div>
+                                <div class="feature-card-prompt">Proponeme una medida de ventas acumuladas year-to-date usando TOTALYTD, sin modificar el PBIP</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Gestionar relaciones <span class="cmd-badge">relationship</span></div>
-                                <div class="feature-card-desc">Crea y administra relaciones entre tablas del modelo.</div>
-                                <div class="feature-card-prompt">Mostrame todas las relaciones del modelo y sugeri las que falten para un esquema estrella</div>
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Auditar relaciones <span class="cmd-badge">PBIP / TMDL</span></div>
+                                <div class="feature-card-desc">Detecta cardinalidad, bidireccionales y posibles problemas del modelo.</div>
+                                <div class="feature-card-prompt">Audita offline todas las relaciones del PBIP y sugeri mejoras para un esquema estrella</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Jerarquias y grupos <span class="cmd-badge">hierarchy</span></div>
-                                <div class="feature-card-desc">Organiza dimensiones en jerarquias y crea grupos de calculo.</div>
-                                <div class="feature-card-prompt">Crea una jerarquia de fecha con Ano, Trimestre, Mes y Dia en la tabla Calendar</div>
+                            <div class="feature-card" data-capability="partial" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Disenar jerarquias <span class="cmd-badge">propuesta</span></div>
+                                <div class="feature-card-desc">Analiza columnas y propone jerarquias; no modifica el modelo publicado.</div>
+                                <div class="feature-card-prompt">Disena una jerarquia de fecha con Ano, Trimestre, Mes y Dia usando las columnas reales del PBIP</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Seguridad RLS <span class="cmd-badge">security-role</span></div>
-                                <div class="feature-card-desc">Configura row-level security con roles y filtros por region o usuario.</div>
-                                <div class="feature-card-prompt">Configura seguridad RLS para que cada gerente regional solo vea datos de su region</div>
+                            <div class="feature-card" data-capability="partial" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Disenar seguridad RLS <span class="cmd-badge">propuesta</span></div>
+                                <div class="feature-card-desc">Revisa roles y genera filtros DAX; la aplicacion final requiere validacion.</div>
+                                <div class="feature-card-prompt">Analiza el PBIP y propone RLS para que cada gerente regional solo vea datos de su region</div>
                             </div>
                         </div>
                     </div>
@@ -1408,22 +1462,22 @@
                             <span class="panel-req offline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Trabaja offline (.pbip)</span>
                         </div>
                         <div class="feature-grid">
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Crear reporte PBIR <span class="cmd-badge">report create</span></div>
                                 <div class="feature-card-desc">Scaffold de un proyecto PBIR completo con paginas y estructura.</div>
                                 <div class="feature-card-prompt">Crea un nuevo reporte PBIR con una pagina de resumen ejecutivo y otra de detalle</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Agregar visuales <span class="cmd-badge">visual add</span></div>
                                 <div class="feature-card-desc">32 tipos: barras, lineas, KPIs, cards, mapas, scatter y mas.</div>
                                 <div class="feature-card-prompt">Agrega un grafico de barras de ventas por region y un card de total de ventas en la pagina principal</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Aplicar temas <span class="cmd-badge">theme</span></div>
                                 <div class="feature-card-desc">Configura paleta de colores, tipografia y estilo visual del reporte.</div>
                                 <div class="feature-card-prompt">Aplica un tema corporativo oscuro con colores azul y dorado al reporte</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Filtros y slicers <span class="cmd-badge">filters add</span></div>
                                 <div class="feature-card-desc">Filtros TopN, categoricos, fechas relativas y slicers de pagina.</div>
                                 <div class="feature-card-prompt">Agrega un filtro TopN de los 10 productos con mas ventas a la pagina de detalle</div>
@@ -1436,28 +1490,28 @@
                         <div class="cat-panel-header">
                             <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
                             <h3>Performance y Diagnosticos</h3>
-                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                            <span class="panel-req mixed">Diagnostico estatico · medicion en vivo no</span>
                         </div>
                         <div class="feature-grid">
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Diagnostico del modelo <span class="cmd-badge">model stats</span></div>
-                                <div class="feature-card-desc">Estadisticas completas: tablas, columnas, medidas, relaciones y tamano.</div>
-                                <div class="feature-card-prompt">Analiza la salud del modelo: estadisticas, posibles problemas y sugerencias de mejora</div>
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Diagnostico del modelo <span class="cmd-badge">PBIP / TMDL</span></div>
+                                <div class="feature-card-desc">Estadisticas de metadatos, relaciones y alertas; no mide memoria ni tiempos reales.</div>
+                                <div class="feature-card-prompt">Analiza offline la salud del PBIP: estadisticas de metadatos, problemas y sugerencias, sin intentar comandos de Desktop</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="live" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Trazar queries <span class="cmd-badge">trace start</span></div>
-                                <div class="feature-card-desc">Captura trazas de ejecucion DAX para identificar cuellos de botella.</div>
+                                <div class="feature-card-desc">Captura ejecuciones reales; necesita un motor semantico accesible.</div>
                                 <div class="feature-card-prompt">Inicia una traza de rendimiento, ejecuta la consulta de ventas por region y mostrame los resultados</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="live" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Limpiar cache <span class="cmd-badge">dax clear-cache</span></div>
-                                <div class="feature-card-desc">Limpia la cache del motor de formulas para benchmarks limpios.</div>
+                                <div class="feature-card-desc">Opera sobre la cache de Analysis Services; no existe dentro del PBIP.</div>
                                 <div class="feature-card-prompt">Limpia el cache de formulas DAX y decime cuanto tarda en ejecutar la consulta de ventas totales</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Optimizar medidas <span class="cmd-badge">measure list</span></div>
-                                <div class="feature-card-desc">Revisa medidas DAX existentes y sugiere optimizaciones de rendimiento.</div>
-                                <div class="feature-card-prompt">Lista todas las medidas del modelo y sugeri optimizaciones de DAX para las que tengan peor rendimiento</div>
+                            <div class="feature-card" data-capability="partial" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Revisar medidas <span class="cmd-badge">analisis estatico</span></div>
+                                <div class="feature-card-desc">Revisa expresiones DAX y sugiere mejoras; no confirma tiempos sin ejecutar.</div>
+                                <div class="feature-card-prompt">Revisa offline las medidas DAX del PBIP y sugeri optimizaciones estaticas, aclarando que no hay benchmark en vivo</div>
                             </div>
                         </div>
                     </div>
@@ -1467,28 +1521,28 @@
                         <div class="cat-panel-header">
                             <div class="cat-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
                             <h3>Documentacion y Deploy</h3>
-                            <span class="panel-req needs-pbi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Requiere PBI Desktop</span>
+                            <span class="panel-req mixed">Documentacion si · deploy parcial</span>
                         </div>
                         <div class="feature-grid">
-                            <div class="feature-card" onclick="useFeatureCard(this)">
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
                                 <div class="feature-card-title">Documentar modelo <span class="cmd-badge">docs</span></div>
                                 <div class="feature-card-desc">Genera un diccionario de datos completo con todas las medidas y tablas.</div>
-                                <div class="feature-card-prompt">Genera un diccionario de datos completo del modelo con descripcion de cada tabla, columna y medida</div>
+                                <div class="feature-card-prompt">Genera offline un diccionario de datos del PBIP con cada tabla, columna, medida y relacion</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Exportar TMDL <span class="cmd-badge">database export-tmdl</span></div>
-                                <div class="feature-card-desc">Exporta el modelo a formato TMDL para control de versiones con Git.</div>
-                                <div class="feature-card-prompt">Exporta el modelo completo a formato TMDL para poder versionarlo con Git</div>
+                            <div class="feature-card" data-capability="offline" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Revisar TMDL <span class="cmd-badge">incluido en PBIP</span></div>
+                                <div class="feature-card-desc">El PBIP ya contiene TMDL y puede analizarse o versionarse con Git.</div>
+                                <div class="feature-card-prompt">Revisa la estructura TMDL incluida en el PBIP y preparame recomendaciones para versionarla con Git</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Snapshot y backup <span class="cmd-badge">transaction</span></div>
-                                <div class="feature-card-desc">Guarda un snapshot del estado actual antes de hacer cambios grandes.</div>
-                                <div class="feature-card-prompt">Hace un snapshot del modelo actual antes de que empecemos a hacer cambios</div>
+                            <div class="feature-card" data-capability="partial" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Plan de backup <span class="cmd-badge">ZIP / Git</span></div>
+                                <div class="feature-card-desc">Puede recomendar un snapshot de archivos; la descarga automatica aun no esta implementada.</div>
+                                <div class="feature-card-prompt">Preparame un plan breve de snapshot y backup del PBIP usando ZIP y Git, sin ejecutar cambios</div>
                             </div>
-                            <div class="feature-card" onclick="useFeatureCard(this)">
-                                <div class="feature-card-title">Comparar versiones <span class="cmd-badge">database diff-tmdl</span></div>
-                                <div class="feature-card-desc">Compara dos exports TMDL y muestra que cambio entre versiones.</div>
-                                <div class="feature-card-prompt">Compara las dos ultimas versiones TMDL exportadas y mostrame que cambio</div>
+                            <div class="feature-card" data-capability="partial" onclick="useFeatureCard(this)">
+                                <div class="feature-card-title">Comparar versiones <span class="cmd-badge">requiere 2 PBIP</span></div>
+                                <div class="feature-card-desc">Es viable offline, pero la interfaz aun no permite cargar dos versiones.</div>
+                                <div class="feature-card-prompt">Explicame como comparar dos versiones PBIP/TMDL y que informacion necesito cargar</div>
                             </div>
                         </div>
                     </div>
@@ -1566,10 +1620,13 @@
             const stepCli    = document.getElementById('stepCli');
             const stepConn   = document.getElementById('stepConn');
             const stepReport = document.getElementById('stepReport');
+            const fileModeReady = !s.pbi_connected && s.report_found;
+            const modelReady = s.pbi_connected || s.report_found;
 
             stepCli.className    = 'setup-step ' + (s.pbi_installed ? 'done' : '');
-            stepConn.className   = 'setup-step ' + (s.pbi_connected ? 'done' : 'warn');
+            stepConn.className   = 'setup-step ' + (modelReady ? 'done' : 'warn');
             stepReport.className = 'setup-step ' + (s.report_found ? 'done' : 'warn');
+            stepConn.querySelector('.setup-step-title').textContent = fileModeReady ? 'Modo archivo' : 'Conectado';
 
             const reportButtons = [
                 document.getElementById('businessReportHeaderBtn'),
@@ -1584,8 +1641,9 @@
             });
 
             document.getElementById('stepCliIcon').textContent    = s.pbi_installed ? '\u2713' : '1';
-            document.getElementById('stepConnIcon').textContent   = s.pbi_connected ? '\u2713' : '2';
+            document.getElementById('stepConnIcon').textContent   = modelReady ? '\u2713' : '2';
             document.getElementById('stepReportIcon').textContent = s.report_found ? '\u2713' : '3';
+            updateFeatureCapabilities(s);
 
             // Show connected model name and connection selector
             const modelNameEl = document.getElementById('connectedModelName');
@@ -1884,9 +1942,24 @@
            FEATURE CARD CLICK
            ═══════════════════════════════════════════ */
         function useFeatureCard(card) {
+            if (card.dataset.capability === 'live' && !serverStatus.pbi_connected) {
+                alert('Esta funcion necesita un motor semantico con datos para ejecutar DAX. El PBIP cargado permite analizar metadatos y reportes, pero no contiene un motor de consulta activo.');
+                return;
+            }
             const prompt = card.querySelector('.feature-card-prompt').textContent.trim();
             userInput.value = prompt;
             sendMessage();
+        }
+
+        function updateFeatureCapabilities(status) {
+            document.querySelectorAll('.feature-card[data-capability="live"]').forEach(card => {
+                const blocked = !status.pbi_connected;
+                card.classList.toggle('blocked', blocked);
+                card.setAttribute('aria-disabled', String(blocked));
+                card.title = blocked
+                    ? 'No disponible en modo PBIP: requiere un motor semantico con datos'
+                    : 'Disponible mediante el motor semantico conectado';
+            });
         }
 
         /* ═══════════════════════════════════════════
@@ -2157,9 +2230,12 @@
             if (s.pbi_connected && s.report_found) {
                 statusDot.className = 'status-dot ok';
                 statusText.textContent = 'Todo listo';
-            } else if (s.pbi_connected || s.report_found) {
-                statusDot.className = 'status-dot partial';
-                statusText.textContent = s.pbi_connected ? 'PBI conectado' : 'Solo reportes';
+            } else if (s.report_found) {
+                statusDot.className = 'status-dot ok';
+                statusText.textContent = 'PBIP listo';
+            } else if (s.pbi_connected) {
+                statusDot.className = 'status-dot ok';
+                statusText.textContent = 'PBI conectado';
             } else if (s.pbi_installed) {
                 statusDot.className = 'status-dot off';
                 statusText.textContent = 'Sin conexion PBI';
@@ -2319,8 +2395,8 @@
                 serverStatus = await res.json();
                 updateSetupSteps(serverStatus);
                 updateHeaderStatus();
-                // Auto-show banner if not fully connected
-                if (!serverStatus.pbi_connected || !serverStatus.report_found) {
+                // A valid PBIP is a complete operating mode even without Desktop.
+                if (!serverStatus.pbi_installed || (!serverStatus.pbi_connected && !serverStatus.report_found)) {
                     setupBanner.classList.add('visible');
                 }
             } catch {
